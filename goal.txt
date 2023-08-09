@@ -1,0 +1,3 @@
+goals:
+main goal is to create procedurally generated chunks using noise
+chunk mesh generation has to multi threaded

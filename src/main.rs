@@ -12,7 +12,9 @@ fn main() {
 
     let (window, _) = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, glfw::WindowMode::Windowed).unwrap();
 
-    while !window.should_close() {
-        glfw.poll_events();
-    }
+    engine::instance::init(&glfw);
+
+    // while !window.should_close() {
+    //     glfw.poll_events();
+    // }
 }

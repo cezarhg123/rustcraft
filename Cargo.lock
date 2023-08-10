@@ -530,6 +530,7 @@ dependencies = [
  "ash",
  "glfw",
  "image",
+ "winapi",
 ]
 
 [[package]]

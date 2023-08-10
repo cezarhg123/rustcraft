@@ -7,8 +7,9 @@
 /// if a type doesnt have a `.null()` function then i wrap it in an `Option`
 #[allow(non_upper_case_globals)]
 pub mod instance {
-    use std::ffi::{CString, CStr};
+    use std::{ffi::{CString, CStr}, ptr::null};
     use ash::vk;
+    use winapi::um::libloaderapi::GetModuleHandleW;
     use crate::WINDOW_TITLE;
 
     const DEBUG: bool = true;
@@ -32,7 +33,7 @@ pub mod instance {
     static mut swapchain_khr: vk::SwapchainKHR = vk::SwapchainKHR::null();
     static mut swapchain_util: Option<ash::extensions::khr::Swapchain> = None;
 
-    static mut swapchain_format: Option<vk::Format> = None;
+    static mut swapchain_format: Option<vk::SurfaceFormatKHR> = None;
     static mut swapchain_present_mode: Option<vk::PresentModeKHR> = None;
 
     static mut extent: Option<vk::Extent2D> = None;
@@ -57,12 +58,14 @@ pub mod instance {
     static mut in_flight_fence: vk::Fence = vk::Fence::null();
     static mut image_index: u32 = 0;
 
-    pub fn init(glfw: &glfw::Glfw) {
+    pub fn init(glfw: &glfw::Glfw, window: &glfw::Window) {
         unsafe {
             create_instance(glfw);
             create_debug_utils();
             choose_physical_device();
             create_logical_device();
+            create_surface(window);
+            create_swapchain(window);
         }
     }
 
@@ -222,6 +225,105 @@ pub mod instance {
 
         if DEBUG {
             println!("Created Vulkan Logical Device");
+        }
+    }
+
+    /// currently only support win32
+    unsafe fn create_surface(window: &glfw::Window) {
+        surface_util = Some(ash::extensions::khr::Surface::new(entry.as_ref().unwrap(), instance.as_ref().unwrap()));
+
+        let win32_surface = ash::extensions::khr::Win32Surface::new(entry.as_ref().unwrap(), instance.as_ref().unwrap());
+        surface_khr = win32_surface.create_win32_surface(
+            &vk::Win32SurfaceCreateInfoKHR::builder()
+                .hinstance(GetModuleHandleW(null()).cast())
+                .hwnd(window.get_win32_window())
+                .build(),
+            None
+        ).unwrap();
+
+        if window.create_window_surface(instance.as_ref().unwrap().handle(), null(), &mut surface_khr).result().is_err() {
+            panic!("Failed to create window surface");
+        }
+
+        if DEBUG {
+            println!("Created Vulkan Window Surface");
+        }
+    }
+
+    unsafe fn create_swapchain(window: &glfw::Window) {
+        swapchain_util = Some(ash::extensions::khr::Swapchain::new(instance.as_ref().unwrap(), device.as_ref().unwrap()));
+
+        let capabilities = surface_util.as_ref().unwrap().get_physical_device_surface_capabilities(gpu, surface_khr).unwrap();
+
+        swapchain_format = Some(
+            *surface_util.as_ref().unwrap().get_physical_device_surface_formats(gpu, surface_khr).unwrap()
+                .iter()
+                .find(|f| f.color_space == vk::ColorSpaceKHR::SRGB_NONLINEAR && f.format == vk::Format::B8G8R8A8_SRGB)
+                .unwrap()
+        );
+
+        swapchain_present_mode = Some(
+            *surface_util.as_ref().unwrap().get_physical_device_surface_present_modes(gpu, surface_khr).unwrap().iter().find(|p| **p == vk::PresentModeKHR::IMMEDIATE).unwrap()
+        );
+
+        let framebuffer_size = window.get_framebuffer_size();
+
+        extent = Some(vk::Extent2D {
+            width: (framebuffer_size.0 as u32).clamp(capabilities.min_image_extent.width, capabilities.max_image_extent.width),
+            height: (framebuffer_size.1 as u32).clamp(capabilities.min_image_extent.height, capabilities.max_image_extent.height),
+        });
+
+        swapchain_khr = swapchain_util.as_ref().unwrap().create_swapchain(
+            &vk::SwapchainCreateInfoKHR::builder()
+                .surface(surface_khr)
+                .min_image_count(capabilities.min_image_count + 1)
+                .image_format(swapchain_format.unwrap().format)
+                .image_color_space(swapchain_format.unwrap().color_space)
+                .image_extent(extent.unwrap())
+                .image_array_layers(1)
+                .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+                .image_sharing_mode(vk::SharingMode::EXCLUSIVE) // if i understand correctly, this should be the best option since im using the swapchain image on one queue(graphics)
+                .pre_transform(capabilities.current_transform)
+                .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+                .present_mode(swapchain_present_mode.unwrap())
+                .clipped(true)
+                .old_swapchain(vk::SwapchainKHR::null())
+                .build(),
+                None
+        ).unwrap();
+
+        if DEBUG {
+            println!("Created Swapchain");
+        }
+
+        let images = swapchain_util.as_ref().unwrap().get_swapchain_images(swapchain_khr).unwrap();
+
+        swapchain_image_views = images.iter().map(|image| {
+            device.as_ref().unwrap().create_image_view(
+                &vk::ImageViewCreateInfo::builder()
+                    .image(*image)
+                    .view_type(vk::ImageViewType::TYPE_2D)
+                    .format(swapchain_format.unwrap().format)
+                    .components(vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY
+                    })
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1
+                    })
+                    .build(),
+                None
+            ).unwrap()
+        }).collect::<Vec<_>>();
+
+        if DEBUG {
+            println!("Created Swapchain Image Views");
         }
     }
 

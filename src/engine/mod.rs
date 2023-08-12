@@ -1,3 +1,5 @@
+pub mod vertex;
+
 /// global "Singleton" instance
 /// 
 /// im doing this cuz i dont wanna pass around references to an engine object
@@ -12,6 +14,8 @@ pub mod instance {
     use winapi::um::libloaderapi::GetModuleHandleW;
     use crate::WINDOW_TITLE;
 
+    use super::vertex::Vertex;
+
     const DEBUG: bool = true;
 
     static mut entry: Option<ash::Entry> = None;
@@ -24,6 +28,8 @@ pub mod instance {
     static mut gpu_memory_properties: Option<vk::PhysicalDeviceMemoryProperties> = None;
 
     static mut device: Option<ash::Device> = None;
+
+    static mut graphics_queue_index: u32 = 0;
     static mut graphics_device_queue: vk::Queue = vk::Queue::null();
     static mut transfer_device_queue: vk::Queue = vk::Queue::null();
 
@@ -37,11 +43,10 @@ pub mod instance {
     static mut swapchain_present_mode: Option<vk::PresentModeKHR> = None;
 
     static mut extent: Option<vk::Extent2D> = None;
-    static mut viewport: Option<vk::Viewport> = None;
-    static mut scissor: Option<vk::Rect2D> = None;
 
     static mut swapchain_image_views: Vec<vk::ImageView> = Vec::new();
     static mut swapchain_framebuffers: Vec<vk::Framebuffer> = Vec::new();
+    static mut depth_image_view: vk::ImageView = vk::ImageView::null();
 
     static mut render_pass: vk::RenderPass = vk::RenderPass::null();
 
@@ -66,6 +71,9 @@ pub mod instance {
             create_logical_device();
             create_surface(window);
             create_swapchain(window);
+            create_command_pool();
+            create_graphics_pipeline();
+            create_framebuffers();
         }
     }
 
@@ -194,8 +202,6 @@ pub mod instance {
                 .queue_priorities(&[1.0])
                 .build()
         ];
-        
-        let mut transfer_queue_index = 0;
 
         if graphics_queue_family.0 != transfer_queue_family.0 {
             queue_create_infos.push(
@@ -204,8 +210,6 @@ pub mod instance {
                     .queue_priorities(&[1.0])
                     .build()
             );
-
-            transfer_queue_index = 1;
         }
 
         device = Some(
@@ -220,8 +224,9 @@ pub mod instance {
             ).unwrap()
         );
 
+        graphics_queue_index = graphics_queue_family.0 as u32;
         graphics_device_queue = device.as_ref().unwrap().get_device_queue(graphics_queue_family.0 as u32, 0);
-        transfer_device_queue = device.as_ref().unwrap().get_device_queue(transfer_queue_family.0 as u32, transfer_queue_index);
+        transfer_device_queue = device.as_ref().unwrap().get_device_queue(transfer_queue_family.0 as u32, 0);
 
         if DEBUG {
             println!("Created Vulkan Logical Device");
@@ -327,6 +332,410 @@ pub mod instance {
         }
     }
 
+    unsafe fn create_command_pool() {
+        command_pool = device.as_ref().unwrap().create_command_pool(
+            &vk::CommandPoolCreateInfo::builder()
+                .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
+                .queue_family_index(graphics_queue_index)
+                .build(),
+            None
+        ).unwrap();
+
+        if DEBUG {
+            println!("Created Command Pool");
+        }
+    }
+
+    unsafe fn create_graphics_pipeline() {
+        let vert_shader_bin = include_bytes!("../../shaders/default.vert.spv");
+        let frag_shader_bin = include_bytes!("../../shaders/default.frag.spv");
+
+        let vertex_shader_module = device.as_ref().unwrap().create_shader_module(
+            &vk::ShaderModuleCreateInfo {
+                s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
+                code_size: vert_shader_bin.len(),
+                p_code: vert_shader_bin.as_ptr() as *const u32,
+                ..Default::default()
+            },
+            None
+        ).unwrap();
+
+        let fragment_shader_module = device.as_ref().unwrap().create_shader_module(
+            &vk::ShaderModuleCreateInfo {
+                s_type: vk::StructureType::SHADER_MODULE_CREATE_INFO,
+                code_size: frag_shader_bin.len(),
+                p_code: frag_shader_bin.as_ptr() as *const u32,
+                ..Default::default()
+            },
+            None
+        ).unwrap();
+
+        let entry_point_name = CString::new("main").unwrap();
+        let shader_stages = [
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(vertex_shader_module)
+                .name(&entry_point_name)
+                .build(),
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(fragment_shader_module)
+                .name(&entry_point_name)
+                .build()
+        ];
+        if DEBUG {
+            println!("Created Shader Stages");
+        }
+
+        let vertex_binding_description = Vertex::get_binding_description();
+        let vertex_attribute_descriptions = Vertex::get_attribute_descriptions();
+
+        let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
+            .vertex_binding_descriptions(&vertex_binding_description)
+            .vertex_attribute_descriptions(&vertex_attribute_descriptions)
+            .build();
+        if DEBUG {
+            println!("Created Vertex Input State Info");
+        }
+
+        let input_assembly_info = vk::PipelineInputAssemblyStateCreateInfo::builder()
+            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+            .primitive_restart_enable(false)
+            .build();
+        if DEBUG {
+            println!("Created Input Assembly State Info");
+        }
+
+        let viewport = [vk::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: extent.unwrap().width as f32,
+            height: extent.unwrap().height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }];
+
+        let scissor = [vk::Rect2D {
+            offset: vk::Offset2D { x: 0, y: 0 },
+            extent: extent.unwrap()
+        }];
+
+        let viewport_state_info = vk::PipelineViewportStateCreateInfo::builder()
+            .viewports(&viewport)
+            .scissors(&scissor)
+            .build();
+        if DEBUG {
+            println!("Created Viewport State Info");
+        }
+
+        let rasterizer_info = vk::PipelineRasterizationStateCreateInfo::builder()
+            .depth_clamp_enable(false)
+            .rasterizer_discard_enable(false)
+            .polygon_mode(vk::PolygonMode::FILL)
+            .line_width(1.0)
+            .cull_mode(vk::CullModeFlags::BACK)
+            .front_face(vk::FrontFace::COUNTER_CLOCKWISE)
+            .depth_bias_enable(false)
+            .build();
+        if DEBUG {
+            println!("Created Rasterizer State Info");
+        }
+
+        let multisample_info = vk::PipelineMultisampleStateCreateInfo::builder()
+            .sample_shading_enable(false)
+            .rasterization_samples(vk::SampleCountFlags::TYPE_1)
+            .build();
+        if DEBUG {
+            println!("Created Multisample State Info");
+        }
+
+        let color_blend_attachments = [
+            vk::PipelineColorBlendAttachmentState::builder()
+                .color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G | vk::ColorComponentFlags::B | vk::ColorComponentFlags::A)
+                .blend_enable(false)
+                .build()
+        ];
+
+        let color_blend_info = vk::PipelineColorBlendStateCreateInfo::builder()
+            .attachments(&color_blend_attachments)
+            .logic_op_enable(false)
+            .build();
+        if DEBUG {
+            println!("Created Color Blend State Info");
+        }
+
+        let camera_descriptor_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(0)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build();
+
+        let texture_atlas_descriptor_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(1)
+            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+            .build();
+
+        let model_descriptor_binding = vk::DescriptorSetLayoutBinding::builder()
+            .binding(2)
+            .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+            .descriptor_count(1)
+            .stage_flags(vk::ShaderStageFlags::VERTEX)
+            .build();
+
+        descriptor_set_layout = device.as_ref().unwrap().create_descriptor_set_layout(
+            &vk::DescriptorSetLayoutCreateInfo::builder()
+                .bindings(&[
+                    camera_descriptor_binding,
+                    texture_atlas_descriptor_binding,
+                    model_descriptor_binding
+                ])
+                .build(),
+            None
+        ).unwrap();
+
+        pipeline_layout = device.as_ref().unwrap().create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo::builder()
+                .set_layouts(&[descriptor_set_layout])
+                .push_constant_ranges(&[])
+                .build(),
+            None
+        ).unwrap();
+
+        let depth_format = {
+            let wanted_formats = [vk::Format::D24_UNORM_S8_UINT, vk::Format::D32_SFLOAT_S8_UINT];
+
+            let mut selected_format = None;
+
+            for format in wanted_formats {
+                let props = instance.as_ref().unwrap().get_physical_device_format_properties(gpu, format);
+
+                if props.optimal_tiling_features.contains(vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT) {
+                    selected_format = Some(format);
+                }
+            }
+
+            selected_format.unwrap()
+        };
+
+        let depth_image = device.as_ref().unwrap().create_image(
+            &vk::ImageCreateInfo::builder()
+                .image_type(vk::ImageType::TYPE_2D)
+                .extent(vk::Extent3D {
+                    width: extent.unwrap().width,
+                    height: extent.unwrap().height,
+                    depth: 1,
+                })
+                .mip_levels(1)
+                .array_layers(1)
+                .format(depth_format)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .tiling(vk::ImageTiling::OPTIMAL)
+                .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .build(),
+            None
+        ).unwrap();
+
+        let depth_image_memory = {
+            let memory_requirements = device.as_ref().unwrap().get_image_memory_requirements(depth_image);
+
+            device.as_ref().unwrap().allocate_memory(
+                &vk::MemoryAllocateInfo::builder()
+                    .allocation_size(memory_requirements.size)
+                    .memory_type_index(find_memory_type(gpu_memory_properties.unwrap(), memory_requirements.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL).unwrap())
+                    .build(),
+                None
+            ).unwrap()
+        };
+        device.as_ref().unwrap().bind_image_memory(depth_image, depth_image_memory, 0).unwrap();
+
+        depth_image_view = device.as_ref().unwrap().create_image_view(
+            &vk::ImageViewCreateInfo::builder()
+                .image(depth_image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(depth_format)
+                .components(vk::ComponentMapping {
+                    r: vk::ComponentSwizzle::IDENTITY,
+                    g: vk::ComponentSwizzle::IDENTITY,
+                    b: vk::ComponentSwizzle::IDENTITY,
+                    a: vk::ComponentSwizzle::IDENTITY
+                })
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: vk::ImageAspectFlags::DEPTH,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: 0,
+                    layer_count: 1
+                })
+                .build(),
+            None
+        ).unwrap();
+
+        let transition_command_buffer = begin_single_exec_command();
+        transition_image_layout(depth_image, vk::ImageLayout::UNDEFINED, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+        end_single_exec_command(transition_command_buffer);
+
+        render_pass = {
+            let color_attachment = vk::AttachmentDescription::builder()
+                .format(swapchain_format.unwrap().format)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::STORE)
+                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+                .build();
+
+            let depth_attachment = vk::AttachmentDescription::builder()
+                .format(depth_format)
+                .samples(vk::SampleCountFlags::TYPE_1)
+                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+                .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+                .initial_layout(vk::ImageLayout::UNDEFINED)
+                .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .build();
+
+            let color_attachment_ref = vk::AttachmentReference::builder()
+                .attachment(0)
+                .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                .build();
+
+            let depth_attachment_ref = vk::AttachmentReference::builder()
+                .attachment(1)
+                .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+                .build();
+
+            let color_attachments = [color_attachment_ref];
+            let subpass = vk::SubpassDescription::builder()
+                .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+                .color_attachments(&color_attachments)
+                .depth_stencil_attachment(&depth_attachment_ref)
+                .build();
+
+            let subpass_dependency = vk::SubpassDependency::builder()
+                .src_subpass(vk::SUBPASS_EXTERNAL)
+                .dst_subpass(0)
+                .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
+                .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT | vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
+                .src_access_mask(vk::AccessFlags::empty())
+                .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE)
+                .build();
+
+            device.as_ref().unwrap().create_render_pass(
+                &vk::RenderPassCreateInfo::builder()
+                    .attachments(&[color_attachment, depth_attachment])
+                    .subpasses(&[subpass])
+                    .dependencies(&[subpass_dependency])
+                    .build(),
+                None
+            ).unwrap()
+        };
+        if DEBUG {
+            println!("Created Render Pass");
+        }
+
+        let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+            .depth_test_enable(true)
+            .depth_write_enable(true)
+            .depth_compare_op(vk::CompareOp::LESS)
+            .depth_bounds_test_enable(false)
+            .stencil_test_enable(false)
+            .build();
+        if DEBUG {
+            println!("Created Depth Stencil Info");
+        }
+
+        graphics_pipeline = device.as_ref().unwrap().create_graphics_pipelines(vk::PipelineCache::null(), &[
+            vk::GraphicsPipelineCreateInfo::builder()
+                .stages(&shader_stages)
+                .vertex_input_state(&vertex_input_info)
+                .input_assembly_state(&input_assembly_info)
+                .viewport_state(&viewport_state_info)
+                .rasterization_state(&rasterizer_info)
+                .multisample_state(&multisample_info)
+                .depth_stencil_state(&depth_stencil_info)
+                .color_blend_state(&color_blend_info)
+                .layout(pipeline_layout)
+                .render_pass(render_pass)
+                .subpass(0)
+                .build()
+        ], None).unwrap()[0];
+
+        if DEBUG {
+            println!("Created Graphics Pipeline");
+        }
+    }
+
+    unsafe fn create_framebuffers() {
+        swapchain_framebuffers = swapchain_image_views.iter().map(|image_view| {
+            device.as_ref().unwrap().create_framebuffer(
+                &vk::FramebufferCreateInfo::builder()
+                    .render_pass(render_pass)
+                    .attachments(&[*image_view, depth_image_view])
+                    .width(extent.unwrap().width)
+                    .height(extent.unwrap().height)
+                    .layers(1)
+                    .build(),
+                None
+            ).unwrap()
+        }).collect();
+
+        if DEBUG {
+            println!("Created Framebuffers");
+        }
+    }
+
+    pub fn begin_single_exec_command() -> vk::CommandBuffer {
+        unsafe {
+            let command_buffer = device.as_ref().unwrap().allocate_command_buffers(
+                &vk::CommandBufferAllocateInfo::builder()
+                    .command_pool(command_pool)
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(1)
+                    .build(),
+            ).unwrap()[0];
+
+            device.as_ref().unwrap().begin_command_buffer(
+                command_buffer,
+                &vk::CommandBufferBeginInfo::builder()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)
+                    .build(),
+            ).unwrap();
+
+            command_buffer
+        }
+    }
+
+    pub fn end_single_exec_command(command_buffer: vk::CommandBuffer) {
+        unsafe {
+            device.as_ref().unwrap().end_command_buffer(command_buffer).unwrap();
+
+            device.as_ref().unwrap().queue_submit(
+                transfer_device_queue,
+                &[
+                    vk::SubmitInfo::builder()
+                        .command_buffers(&[command_buffer])
+                        .build(),
+                ],
+                vk::Fence::null()
+            ).unwrap();
+
+            device.as_ref().unwrap().queue_wait_idle(transfer_device_queue).unwrap();
+
+            device.as_ref().unwrap().free_command_buffers(
+                command_pool,
+                &[command_buffer],
+            );
+        }
+    }
+
     /// yoinked from ash examples
     unsafe extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -370,5 +779,62 @@ pub mod instance {
         }
 
         None
+    }
+
+    pub fn transition_image_layout(
+        image: vk::Image,
+        old_layout: vk::ImageLayout,
+        new_layout: vk::ImageLayout
+    ) {
+        let transition_command_buffer = begin_single_exec_command();
+    
+        let mut barrier = vk::ImageMemoryBarrier::builder()
+            .old_layout(old_layout)
+            .new_layout(new_layout)
+            .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+            .image(image)
+            .subresource_range(vk::ImageSubresourceRange::builder()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .base_mip_level(0)
+                .level_count(1)
+                .base_array_layer(0)
+                .layer_count(1)
+                .build())
+            .build();
+        
+        let (src_stage, dst_stage) = if old_layout == vk::ImageLayout::UNDEFINED  && new_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::empty();
+            barrier.dst_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+    
+            (vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER)
+        } else if old_layout == vk::ImageLayout::TRANSFER_DST_OPTIMAL && new_layout == vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL {
+            barrier.src_access_mask = vk::AccessFlags::TRANSFER_WRITE;
+            barrier.dst_access_mask = vk::AccessFlags::SHADER_READ;
+    
+            (vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER)
+        } else if old_layout == vk::ImageLayout::UNDEFINED && new_layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+            barrier.subresource_range.aspect_mask = vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL;
+            barrier.src_access_mask = vk::AccessFlags::empty();
+            barrier.dst_access_mask = vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_READ | vk::AccessFlags::DEPTH_STENCIL_ATTACHMENT_WRITE;
+
+            (vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::EARLY_FRAGMENT_TESTS)
+        } else {
+            unreachable!()
+        };
+    
+        unsafe {
+            device.as_ref().unwrap().cmd_pipeline_barrier(
+                transition_command_buffer,
+                src_stage,
+                dst_stage,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[barrier],
+            );
+        }
+    
+        end_single_exec_command(transition_command_buffer);
     }
 }

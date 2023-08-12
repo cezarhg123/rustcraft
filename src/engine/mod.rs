@@ -63,6 +63,8 @@ pub mod instance {
     static mut in_flight_fence: vk::Fence = vk::Fence::null();
     static mut image_index: u32 = 0;
 
+    static mut draw_calls: Vec<(vk::Buffer, vk::DescriptorSet, u32)> = Vec::new();
+
     pub fn init(glfw: &glfw::Glfw, window: &glfw::Window) {
         unsafe {
             create_instance(glfw);
@@ -74,6 +76,7 @@ pub mod instance {
             create_command_pool();
             create_graphics_pipeline();
             create_framebuffers();
+            create_draw_objects();
         }
     }
 
@@ -692,6 +695,24 @@ pub mod instance {
         }
     }
 
+    unsafe fn create_draw_objects() {
+        draw_command_buffer = device.as_ref().unwrap().allocate_command_buffers(
+            &vk::CommandBufferAllocateInfo::builder()
+                .command_pool(command_pool)
+                .level(vk::CommandBufferLevel::PRIMARY)
+                .command_buffer_count(1)
+                .build(),
+        ).unwrap()[0];
+
+        let semaphore_create_info = vk::SemaphoreCreateInfo::builder().build();
+
+        image_available_semaphore = device.as_ref().unwrap().create_semaphore(&semaphore_create_info, None).unwrap();
+        render_finished_semaphore = device.as_ref().unwrap().create_semaphore(&semaphore_create_info, None).unwrap();
+
+        in_flight_fence = device.as_ref().unwrap().create_fence(&vk::FenceCreateInfo::builder().flags(vk::FenceCreateFlags::SIGNALED).build(), None).unwrap();
+    }
+
+    /// the command buffer returned will be submitted to a transfer queue
     pub fn begin_single_exec_command() -> vk::CommandBuffer {
         unsafe {
             let command_buffer = device.as_ref().unwrap().allocate_command_buffers(
@@ -700,7 +721,7 @@ pub mod instance {
                     .level(vk::CommandBufferLevel::PRIMARY)
                     .command_buffer_count(1)
                     .build(),
-            ).unwrap()[0];
+        ).unwrap()[0];
 
             device.as_ref().unwrap().begin_command_buffer(
                 command_buffer,
@@ -736,6 +757,120 @@ pub mod instance {
         }
     }
 
+    /// pushes a draw "command" to a vector
+    /// 
+    /// note: writing of descriptor sets is not handled by engine
+    pub fn draw(vertex_buffer: vk::Buffer, descriptor_set: vk::DescriptorSet, vertex_count: u32) {
+        unsafe {
+            draw_calls.push((vertex_buffer, descriptor_set, vertex_count));
+        }
+    }
+
+
+    /// note: again i repeat, writing of descriptor sets is not handled by engine
+    pub fn render_surface() {
+        unsafe {
+            device.as_ref().unwrap().wait_for_fences(&[in_flight_fence], true, std::u64::MAX).unwrap();
+            device.as_ref().unwrap().reset_fences(&[in_flight_fence]).unwrap();
+
+            image_index = swapchain_util.as_ref().unwrap().acquire_next_image(swapchain_khr, std::u64::MAX, image_available_semaphore, vk::Fence::null()).unwrap().0;
+
+            device.as_ref().unwrap().begin_command_buffer(draw_command_buffer, &vk::CommandBufferBeginInfo::builder().build()).unwrap();
+
+            device.as_ref().unwrap().cmd_begin_render_pass(
+                draw_command_buffer,
+                &vk::RenderPassBeginInfo::builder()
+                    .render_pass(render_pass)
+                    .framebuffer(swapchain_framebuffers[image_index as usize])
+                    .render_area(vk::Rect2D {
+                        offset: vk::Offset2D { x: 0, y: 0 },
+                        extent: extent.unwrap()
+                    })
+                    .clear_values(&[
+                        vk::ClearValue {
+                            color: vk::ClearColorValue {
+                                float32: [0.0, 0.0, 0.0, 1.0]
+                            }
+                        },
+                        vk::ClearValue {
+                            depth_stencil: vk::ClearDepthStencilValue {
+                                depth: 1.0,
+                                stencil: 0
+                            }
+                        }
+                    ])
+                    .build(),
+                vk::SubpassContents::INLINE
+            );
+
+            device.as_ref().unwrap().cmd_bind_pipeline(draw_command_buffer, vk::PipelineBindPoint::GRAPHICS, graphics_pipeline);
+
+            for call in draw_calls.iter() {
+                device.as_ref().unwrap().cmd_bind_descriptor_sets(
+                    draw_command_buffer,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    pipeline_layout,
+                    0,
+                    &[call.1],
+                    &[]
+                );
+
+                device.as_ref().unwrap().cmd_bind_vertex_buffers(
+                    draw_command_buffer,
+                    0,
+                    &[call.0],
+                    &[0]
+                );
+
+                device.as_ref().unwrap().cmd_draw(
+                    draw_command_buffer,
+                    call.2,
+                    1,
+                    0,
+                    0
+                );
+            }
+            draw_calls.clear();
+
+            device.as_ref().unwrap().cmd_end_render_pass(draw_command_buffer);
+            device.as_ref().unwrap().end_command_buffer(draw_command_buffer).unwrap();
+
+            device.as_ref().unwrap().queue_submit(
+                graphics_device_queue,
+                &[
+                    vk::SubmitInfo::builder()
+                        .command_buffers(&[draw_command_buffer])
+                        .wait_dst_stage_mask(&[vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT])
+                        .wait_semaphores(&[image_available_semaphore])
+                        .signal_semaphores(&[render_finished_semaphore])
+                        .build()
+                ],
+                in_flight_fence
+            ).unwrap();
+
+            swapchain_util.as_ref().unwrap().queue_present(
+                graphics_device_queue,
+                &vk::PresentInfoKHR::builder()
+                    .wait_semaphores(&[render_finished_semaphore])
+                    .swapchains(&[swapchain_khr])
+                    .image_indices(&[image_index])
+                    .build()
+            ).unwrap();
+        }
+    }
+
+    pub fn get_device() -> ash::Device {
+        unsafe {
+            device.clone().unwrap()
+        }
+    }
+
+    pub fn get_physical_memory_properties() -> vk::PhysicalDeviceMemoryProperties {
+        unsafe {
+            gpu_memory_properties.unwrap()
+        }
+    }
+
     /// yoinked from ash examples
     unsafe extern "system" fn vulkan_debug_callback(
         message_severity: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -766,7 +901,7 @@ pub mod instance {
     }
 
     /// ported from https://vulkan-tutorial.com
-    fn find_memory_type(
+    pub fn find_memory_type(
         memory_properties: vk::PhysicalDeviceMemoryProperties,
         type_filter: u32,
         properties: vk::MemoryPropertyFlags

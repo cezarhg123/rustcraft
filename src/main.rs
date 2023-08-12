@@ -14,7 +14,9 @@ fn main() {
 
     engine::instance::init(&glfw, &window);
 
-    // while !window.should_close() {
-    //     glfw.poll_events();
-    // }
+    while !window.should_close() {
+        glfw.poll_events();
+
+        engine::instance::render_surface();
+    }
 }

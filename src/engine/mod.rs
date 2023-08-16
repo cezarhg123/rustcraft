@@ -1,4 +1,7 @@
 pub mod vertex;
+pub mod camera;
+pub mod buffer;
+pub mod texture;
 
 /// global "Singleton" instance
 /// 
@@ -16,7 +19,7 @@ pub mod instance {
 
     use super::vertex::Vertex;
 
-    const DEBUG: bool = true;
+    pub const DEBUG: bool = true;
 
     static mut entry: Option<ash::Entry> = None;
     static mut instance: Option<ash::Instance> = None;
@@ -31,7 +34,6 @@ pub mod instance {
 
     static mut graphics_queue_index: u32 = 0;
     static mut graphics_device_queue: vk::Queue = vk::Queue::null();
-    static mut transfer_device_queue: vk::Queue = vk::Queue::null();
 
     static mut surface_khr: vk::SurfaceKHR = vk::SurfaceKHR::null();
     static mut surface_util: Option<ash::extensions::khr::Surface> = None;
@@ -53,7 +55,7 @@ pub mod instance {
     static mut pipeline_layout: vk::PipelineLayout = vk::PipelineLayout::null();
     static mut graphics_pipeline: vk::Pipeline = vk::Pipeline::null();
 
-    static mut command_pool: vk::CommandPool = vk::CommandPool::null();
+    static mut graphics_command_pool: vk::CommandPool = vk::CommandPool::null();
     static mut descriptor_set_layout: vk::DescriptorSetLayout = vk::DescriptorSetLayout::null();
 
     //drawing
@@ -63,7 +65,7 @@ pub mod instance {
     static mut in_flight_fence: vk::Fence = vk::Fence::null();
     static mut image_index: u32 = 0;
 
-    static mut draw_calls: Vec<(vk::Buffer, vk::DescriptorSet, u32)> = Vec::new();
+    static mut draw_calls: Vec<(vk::Buffer, vk::DescriptorSet, u64)> = Vec::new();
 
     pub fn init(glfw: &glfw::Glfw, window: &glfw::Window) {
         unsafe {
@@ -181,15 +183,6 @@ pub mod instance {
                 p.queue_flags.contains(vk::QueueFlags::GRAPHICS)
             })
             .expect("No graphics queue found");
-        
-        // completely unnecessary but i want to work with 2 queues to learn vulkan
-        let transfer_queue_family = queue_families
-            .iter()
-            .enumerate()
-            .find(|(_, p)| {
-                p.queue_flags.contains(vk::QueueFlags::TRANSFER)
-            })
-            .expect("No transfer queue found");
 
         let mut physical_device_features = instance.as_ref().unwrap().get_physical_device_features(gpu);
         physical_device_features.sampler_anisotropy = 1;
@@ -199,21 +192,12 @@ pub mod instance {
         ];
         let device_extension_ptrs = device_extensions.iter().map(|s| s.as_ptr() as *const i8).collect::<Vec<_>>();
 
-        let mut queue_create_infos = vec![
+        let queue_create_infos = vec![
             vk::DeviceQueueCreateInfo::builder()
                 .queue_family_index(graphics_queue_family.0 as u32)
                 .queue_priorities(&[1.0])
                 .build()
         ];
-
-        if graphics_queue_family.0 != transfer_queue_family.0 {
-            queue_create_infos.push(
-                vk::DeviceQueueCreateInfo::builder()
-                    .queue_family_index(transfer_queue_family.0 as u32)
-                    .queue_priorities(&[1.0])
-                    .build()
-            );
-        }
 
         device = Some(
             instance.as_ref().unwrap().create_device(
@@ -229,7 +213,6 @@ pub mod instance {
 
         graphics_queue_index = graphics_queue_family.0 as u32;
         graphics_device_queue = device.as_ref().unwrap().get_device_queue(graphics_queue_family.0 as u32, 0);
-        transfer_device_queue = device.as_ref().unwrap().get_device_queue(transfer_queue_family.0 as u32, 0);
 
         if DEBUG {
             println!("Created Vulkan Logical Device");
@@ -336,7 +319,7 @@ pub mod instance {
     }
 
     unsafe fn create_command_pool() {
-        command_pool = device.as_ref().unwrap().create_command_pool(
+        graphics_command_pool = device.as_ref().unwrap().create_command_pool(
             &vk::CommandPoolCreateInfo::builder()
                 .flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER)
                 .queue_family_index(graphics_queue_index)
@@ -698,7 +681,7 @@ pub mod instance {
     unsafe fn create_draw_objects() {
         draw_command_buffer = device.as_ref().unwrap().allocate_command_buffers(
             &vk::CommandBufferAllocateInfo::builder()
-                .command_pool(command_pool)
+                .command_pool(graphics_command_pool)
                 .level(vk::CommandBufferLevel::PRIMARY)
                 .command_buffer_count(1)
                 .build(),
@@ -717,11 +700,11 @@ pub mod instance {
         unsafe {
             let command_buffer = device.as_ref().unwrap().allocate_command_buffers(
                 &vk::CommandBufferAllocateInfo::builder()
-                    .command_pool(command_pool)
+                    .command_pool(graphics_command_pool)
                     .level(vk::CommandBufferLevel::PRIMARY)
                     .command_buffer_count(1)
                     .build(),
-        ).unwrap()[0];
+            ).unwrap()[0];
 
             device.as_ref().unwrap().begin_command_buffer(
                 command_buffer,
@@ -739,7 +722,7 @@ pub mod instance {
             device.as_ref().unwrap().end_command_buffer(command_buffer).unwrap();
 
             device.as_ref().unwrap().queue_submit(
-                transfer_device_queue,
+                graphics_device_queue,
                 &[
                     vk::SubmitInfo::builder()
                         .command_buffers(&[command_buffer])
@@ -748,10 +731,10 @@ pub mod instance {
                 vk::Fence::null()
             ).unwrap();
 
-            device.as_ref().unwrap().queue_wait_idle(transfer_device_queue).unwrap();
+            device.as_ref().unwrap().queue_wait_idle(graphics_device_queue).unwrap();
 
             device.as_ref().unwrap().free_command_buffers(
-                command_pool,
+                graphics_command_pool,
                 &[command_buffer],
             );
         }
@@ -760,7 +743,7 @@ pub mod instance {
     /// pushes a draw "command" to a vector
     /// 
     /// note: writing of descriptor sets is not handled by engine
-    pub fn draw(vertex_buffer: vk::Buffer, descriptor_set: vk::DescriptorSet, vertex_count: u32) {
+    pub fn draw(vertex_buffer: vk::Buffer, descriptor_set: vk::DescriptorSet, vertex_count: u64) {
         unsafe {
             draw_calls.push((vertex_buffer, descriptor_set, vertex_count));
         }
@@ -824,7 +807,7 @@ pub mod instance {
 
                 device.as_ref().unwrap().cmd_draw(
                     draw_command_buffer,
-                    call.2,
+                    call.2 as u32,
                     1,
                     0,
                     0
@@ -859,6 +842,31 @@ pub mod instance {
         }
     }
 
+    pub fn create_descriptor_pool() -> vk::DescriptorPool {
+        unsafe {
+            device.as_ref().unwrap().create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::builder()
+                    .pool_sizes(&[
+                        vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::UNIFORM_BUFFER,
+                            descriptor_count: 1
+                        },
+                        vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                            descriptor_count: 1
+                        },
+                        vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::UNIFORM_BUFFER,
+                            descriptor_count: 1
+                        }
+                    ])
+                    .max_sets(1)
+                    .build(),
+                None
+            ).unwrap()
+        }
+    }
+
     pub fn get_device() -> ash::Device {
         unsafe {
             device.clone().unwrap()
@@ -868,6 +876,12 @@ pub mod instance {
     pub fn get_physical_memory_properties() -> vk::PhysicalDeviceMemoryProperties {
         unsafe {
             gpu_memory_properties.unwrap()
+        }
+    }
+
+    pub fn get_descriptor_set_layout() -> vk::DescriptorSetLayout {
+        unsafe {
+            descriptor_set_layout
         }
     }
 

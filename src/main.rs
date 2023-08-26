@@ -3,10 +3,10 @@ pub mod timer;
 pub mod world;
 
 use std::{io::Cursor, mem::size_of, time::Instant};
-
 use ash::vk;
-use engine::{camera::Camera, buffer::Buffer, vertex::Vertex, texture::Texture};
+use engine::{camera::{Camera, CameraUniform}, buffer::Buffer, vertex::Vertex, texture::Texture};
 use timer::Timer;
+use world::{World, chunk::{Chunk, build_mesh}, block::{Block, BlockType}};
 
 pub const WINDOW_WIDTH: u32 = 1920;
 pub const WINDOW_HEIGHT: u32 = 1080;
@@ -24,73 +24,41 @@ fn main() {
 
     let mut camera = Camera::new(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 0.0, -1.0));
 
-    let vertex_buffer = Buffer::new(&[
-        Vertex::new(glm::vec3(-0.5, -0.5, -2.0), glm::vec2(0.0, 0.0)),
-        Vertex::new(glm::vec3(0.5, -0.5, -2.0), glm::vec2(1.0, 0.0)),
-        Vertex::new(glm::vec3(0.0, 0.5, -2.0), glm::vec2(0.5, 1.0)),
-    ], vk::BufferUsageFlags::VERTEX_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
+    let texture = Texture::new(image::load(Cursor::new(std::fs::read("textures/atlas.png").unwrap()), image::ImageFormat::Png).unwrap().flipv());
 
-    let model = Buffer::new(&[glm::Mat4::new_scaling(1.0)], vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
-    let model_info = vk::DescriptorBufferInfo::builder()
-        .buffer(model.buffer())
-        .range(size_of::<glm::Mat4>() as u64)
-        .offset(0)
-        .build();
+    let mut world = World::new(10);
+    // let mut chunk = Chunk::new(glm::vec3(0, -8, 0), |pos| {
+    //     if pos.y < -2 {
+    //         Block::new("Grass Block", "grass_block", BlockType::Solid, glm::vec2(0.0, 0.0), glm::vec2(0.1, 0.0), glm::vec2(0.2, 0.0))
+    //     } else {
+    //         Block::new("Air", "air", BlockType::Air, glm::vec2(0.9, 0.9), glm::vec2(0.9, 0.9), glm::vec2(0.9, 0.9))
+    //     }
+    // });
+    // build_mesh(&chunk, [None, None, None, None, None, None]);
 
-    let descriptor_pool = engine::instance::create_descriptor_pool();
-    let descriptor_set = unsafe {
-        engine::instance::get_device().allocate_descriptor_sets(
-            &vk::DescriptorSetAllocateInfo::builder()
-                .descriptor_pool(descriptor_pool)
-                .set_layouts(&[engine::instance::get_descriptor_set_layout()])
-                .build()
-        ).unwrap()[0]
-    };
-
-    let texture = Texture::new(image::load(Cursor::new(std::fs::read("textures/atlas.png").unwrap()), image::ImageFormat::Png).unwrap());
-
-    // let mut delta_timer = Timer::new();
-    let mut delta_prev_time = Instant::now();
+    let mut delta_timer = Timer::new();
+    let mut fps_timer = Timer::new();
+    let mut fps_counter = 0;
 
     while !window.should_close() {
         glfw.poll_events();
 
-        let delta_crnt_time = Instant::now();
-        let delta_time = (delta_crnt_time - delta_prev_time).as_secs_f32();
-        delta_prev_time = delta_crnt_time;
+        delta_timer.tick();
+        let delta_time = delta_timer.elapsed();
+        delta_timer.reset();
 
-        camera.inputs(&mut window, delta_time);
-        
-        unsafe {
-            engine::instance::get_device().update_descriptor_sets(
-                &[
-                    vk::WriteDescriptorSet::builder()
-                        .dst_set(descriptor_set)
-                        .dst_binding(0)
-                        .dst_array_element(0)
-                        .buffer_info(&[camera.descriptor_buffer_info()])
-                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                        .build(),
-                    vk::WriteDescriptorSet::builder()
-                        .dst_set(descriptor_set)
-                        .dst_binding(1)
-                        .dst_array_element(0)
-                        .image_info(&[texture.descriptor_image_info()])
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .build(),
-                    vk::WriteDescriptorSet::builder()
-                        .dst_set(descriptor_set)
-                        .dst_binding(2)
-                        .dst_array_element(0)
-                        .buffer_info(&[model_info])
-                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
-                        .build()
-                ],
-                &[]
-            );
+        fps_timer.tick();
+        fps_counter += 1;
+        if fps_timer.elapsed() > 1.0 {
+            println!("FPS: {}", fps_counter);
+            fps_counter = 0;
+            fps_timer.reset();
         }
 
-        engine::instance::draw(vertex_buffer.buffer(), descriptor_set, vertex_buffer.count());
+        camera.inputs(&mut window, delta_time);
+
+        world.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());
+        // chunk.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());
 
         engine::instance::render_surface();
     }

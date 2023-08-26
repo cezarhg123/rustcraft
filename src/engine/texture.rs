@@ -17,7 +17,7 @@ impl Texture {
             let device = instance::get_device();
 
             let image_dims = image.dimensions();
-            let image_buffer = Buffer::new(image.as_bytes(), vk::BufferUsageFlags::TRANSFER_SRC, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
+            let image_buffer = Buffer::new(image.as_bytes(), vk::BufferUsageFlags::TRANSFER_SRC, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT).unwrap();
 
             let vk_image = device.create_image(
                 &vk::ImageCreateInfo::builder()

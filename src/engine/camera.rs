@@ -43,7 +43,7 @@ impl Camera {
                 ],
                 vk::BufferUsageFlags::UNIFORM_BUFFER,
                 vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT
-            ),
+            ).unwrap(),
             rotating: false,
             accept_input: true
         }

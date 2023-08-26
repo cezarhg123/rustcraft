@@ -15,13 +15,19 @@ pub struct Buffer<T> {
 
 impl<T> Buffer<T> {
     /// if you want to clone the buffer make sure `usage` has `vk::BufferUsageFlags::TRANSFER_SRC`
-    pub fn new(data: &[T], usage: vk::BufferUsageFlags, wanted_memory: vk::MemoryPropertyFlags) -> Buffer<T> {
+    /// 
+    /// returns None if data has size of 0
+    pub fn new(data: &[T], usage: vk::BufferUsageFlags, wanted_memory: vk::MemoryPropertyFlags) -> Option<Buffer<T>> {
         unsafe {
             let device = instance::get_device();
 
             let data_size = (data.len() * std::mem::size_of::<T>()) as u64;
             if DEBUG {
                 println!("Allocating {}B GPU memory", data_size);
+            }
+
+            if data_size == 0 {
+                return None;
             }
 
             let buffer = device.create_buffer(
@@ -49,7 +55,7 @@ impl<T> Buffer<T> {
             data_ptr.copy_from_nonoverlapping(data.as_ptr(), data.len());
             device.unmap_memory(memory);
 
-            Buffer {
+            Some(Buffer {
                 buffer,
                 memory,
                 memory_type: wanted_memory,
@@ -57,7 +63,7 @@ impl<T> Buffer<T> {
                 size: data_size,
                 count: data.len() as u64,
                 _phantom: PhantomData
-            }
+            })
         }
     }
 

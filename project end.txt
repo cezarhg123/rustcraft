@@ -1,0 +1,2 @@
+project ended because of my vulkan engine limitations
+next revision should use a giant vkBuffer for the entire world and suballocate for seperate chunks

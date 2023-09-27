@@ -23,7 +23,7 @@ impl<T> Buffer<T> {
 
             let data_size = (data.len() * std::mem::size_of::<T>()) as u64;
             if DEBUG {
-                println!("Allocating {}B GPU memory", data_size);
+                // println!("Allocating {}B GPU memory", data_size);
             }
 
             if data_size == 0 {
@@ -67,6 +67,50 @@ impl<T> Buffer<T> {
         }
     }
 
+    pub fn new_empty(size: u64, usage: vk::BufferUsageFlags, wanted_memory: vk::MemoryPropertyFlags) -> Buffer<T> {
+        unsafe {
+            let device = instance::get_device();
+
+            if DEBUG {
+                // println!("Allocating {}B GPU memory", data_size);
+            }
+
+            if size == 0 {
+                panic!("Data size is 0");
+            }
+
+            let buffer = device.create_buffer(
+                &vk::BufferCreateInfo::builder()
+                    .size(size)
+                    .usage(usage)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                    .build(),
+                None
+            ).unwrap();
+
+            let memory_requirements = device.get_buffer_memory_requirements(buffer);
+
+            let memory = device.allocate_memory(
+                &vk::MemoryAllocateInfo::builder()
+                    .allocation_size(memory_requirements.size)
+                    .memory_type_index(find_memory_type(instance::get_physical_memory_properties(), memory_requirements.memory_type_bits, wanted_memory).unwrap())
+                    .build(),
+                None
+            ).unwrap();
+
+            device.bind_buffer_memory(buffer, memory, 0).unwrap();
+
+            Buffer {
+                buffer,
+                memory,
+                memory_type: wanted_memory,
+                usage,
+                size,
+                count: 0,
+                _phantom: PhantomData
+            }
+        }
+    }
 
     /// Errors `vk::Result::ERROR_UNKNOWN` if current buffer is stored in device local memory
     pub fn change_buffer(&mut self, data: &[T]) -> Result<(), vk::Result> {
@@ -95,7 +139,7 @@ impl<T> Buffer<T> {
             // reallocate memory if previous amount was too small
             if data_size > self.size {
                 if DEBUG {
-                    println!("Reallocating {new_size}B GPU memory. ({old_size}B -> {new_size}B))", new_size=data_size, old_size=self.size);
+                    // println!("Reallocating {new_size}B GPU memory. ({old_size}B -> {new_size}B))", new_size=data_size, old_size=self.size);
                 }
 
                 let memory_requirements = device.get_buffer_memory_requirements(new_buffer);
@@ -118,6 +162,18 @@ impl<T> Buffer<T> {
             device.unmap_memory(self.memory);
 
             Ok(())
+        }
+    }
+
+    pub fn map(&self, offset: u64, size: u64) -> *mut T {
+        unsafe {
+            instance::get_device().map_memory(self.memory, offset, size, vk::MemoryMapFlags::empty()).unwrap() as *mut T
+        }
+    }
+
+    pub fn unmap(&self) {
+        unsafe {
+            instance::get_device().unmap_memory(self.memory);
         }
     }
 
@@ -196,7 +252,7 @@ impl<T> Drop for Buffer<T> {
             device.destroy_buffer(self.buffer, None);
             device.free_memory(self.memory, None);
             if DEBUG {
-                println!("deleted buffer: {}B", self.size);
+                // println!("deleted buffer: {}B", self.size);
             }
         }
     }

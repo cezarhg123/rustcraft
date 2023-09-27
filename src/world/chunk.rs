@@ -5,12 +5,15 @@ use super::block::{Block, BlockType};
 
 type LocalPos = glm::I8Vec3;
 pub type GlobalPos = glm::IVec3;
+pub type BufferOffset = u64;
+pub type Size = u64;
+pub type Count = u64;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
     position: glm::IVec3,
     blocks: HashMap<LocalPos, Block>,
-    mesh: Option<(Buffer<Vertex>, Buffer<glm::Mat4>, vk::DescriptorPool, vk::DescriptorSet)>
+    mesh: Option<(BufferOffset, Size, Buffer<glm::Mat4>, vk::DescriptorPool, vk::DescriptorSet, Count)>
 }
 
 impl Chunk {
@@ -36,12 +39,12 @@ impl Chunk {
         }
     }
 
-    pub fn draw(&self, camera_buffer_info: vk::DescriptorBufferInfo, atlas_image_info: vk::DescriptorImageInfo) {
+    pub fn write_descriptor(&self, camera_buffer_info: vk::DescriptorBufferInfo, atlas_image_info: vk::DescriptorImageInfo) {
         if let Some(mesh) = &self.mesh {
             unsafe {
                 engine::instance::get_device().update_descriptor_sets(&[
                     vk::WriteDescriptorSet::builder()
-                        .dst_set(mesh.3)
+                        .dst_set(mesh.4)
                         .dst_binding(0)
                         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                         .buffer_info(&[
@@ -49,7 +52,7 @@ impl Chunk {
                         ])
                         .build(),
                     vk::WriteDescriptorSet::builder()
-                        .dst_set(mesh.3)
+                        .dst_set(mesh.4)
                         .dst_binding(1)
                         .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
                         .image_info(&[
@@ -57,12 +60,12 @@ impl Chunk {
                         ])
                         .build(),
                     vk::WriteDescriptorSet::builder()
-                        .dst_set(mesh.3)
+                        .dst_set(mesh.4)
                         .dst_binding(2)
                         .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
                         .buffer_info(&[
                             vk::DescriptorBufferInfo::builder()
-                                .buffer(mesh.1.buffer())
+                                .buffer(mesh.2.buffer())
                                 .range(size_of::<glm::Mat4>() as u64)
                                 .offset(0)
                                 .build()
@@ -70,13 +73,15 @@ impl Chunk {
                         .build()
                 ], &[]);
             }
-    
-            engine::instance::draw(mesh.0.buffer(), mesh.3, mesh.0.count());
         }
+    }
+
+    pub fn get_draw_info(&self) -> Option<(BufferOffset, Size, vk::DescriptorSet, Count)> {
+        self.mesh.as_ref().map(|mesh| (mesh.0, mesh.1, mesh.4, mesh.5))
     }
 }
 
-pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 6]) {
+pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 6], world_buffer: *const Buffer<Vertex>, offset: u64, size: u64) {
     let chunk = unsafe { &mut *chunk.cast_mut() };
 
     let neighbour_chunks = unsafe {[
@@ -239,21 +244,26 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
         }
     }
 
+    let world_buffer = unsafe { &*world_buffer };
+    let ptr = world_buffer.map(offset, size);
+    unsafe {
+        ptr.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
+    }
+    world_buffer.unmap();
     
-    let vertex_buffer = Buffer::new(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
     let model = Buffer::new(&[glm::Mat4::new_translation(&glm::vec3(chunk.position.x as f32, -chunk.position.y as f32, chunk.position.z as f32))], vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT).unwrap();
-     
-    if let Some(vertex_buffer) = vertex_buffer {
+    
+    if vertices.len() > 0 {    
         let descriptor_pool = engine::instance::create_descriptor_pool();
         let descriptor_set = unsafe {
             engine::instance::get_device().allocate_descriptor_sets(
                 &vk::DescriptorSetAllocateInfo::builder()
-                    .descriptor_pool(descriptor_pool)
-                    .set_layouts(&[engine::instance::get_descriptor_set_layout()])
-                    .build()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&[engine::instance::get_descriptor_set_layout()])
+                .build()
             ).unwrap()[0]
         };
         
-        chunk.mesh = Some((vertex_buffer, model, descriptor_pool, descriptor_set));
+        chunk.mesh = Some((offset, size, model, descriptor_pool, descriptor_set, vertices.len() as u64));
     }
 }

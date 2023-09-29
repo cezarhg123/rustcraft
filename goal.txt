@@ -1,3 +1,6 @@
 goals:
 main goal is to create procedurally generated chunks using noise
-chunk mesh generation has to multi threaded
+
+--chunk mesh generation has to multi threaded--
+no multithreading since its more of a ram bottleneck since my algorithm is unoptimized
+optimizing the optimizing is not in plan currently

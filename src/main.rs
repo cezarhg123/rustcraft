@@ -26,7 +26,7 @@ fn main() {
 
     let texture = Texture::new(image::load(Cursor::new(std::fs::read("textures/atlas.png").unwrap()), image::ImageFormat::Png).unwrap().flipv());
 
-    let mut world = World::new(20);
+    let mut world = World::new(8);
     // let mut chunk = Chunk::new(glm::vec3(0, -8, 0), |pos| {
     //     if pos.y < -2 {
     //         Block::new("Grass Block", "grass_block", BlockType::Solid, glm::vec2(0.0, 0.0), glm::vec2(0.1, 0.0), glm::vec2(0.2, 0.0))
@@ -56,6 +56,8 @@ fn main() {
         }
 
         camera.inputs(&mut window, delta_time);
+
+        world.update_world(camera.position());
 
         world.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());
         // chunk.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());

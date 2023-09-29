@@ -10,4 +10,5 @@ ash = "0.37.3"
 glfw = { version = "0.52.0", features = ["vulkan", "ash"] }
 glm = { version = "0.18.0", package = "nalgebra-glm" }
 image = "0.24.7"
+noise = "0.8.2"
 winapi = "0.3.9"

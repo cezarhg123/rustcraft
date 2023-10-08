@@ -65,7 +65,9 @@ pub mod instance {
     static mut in_flight_fence: vk::Fence = vk::Fence::null();
     static mut image_index: u32 = 0;
 
-    static mut draw_calls: Vec<(vk::Buffer, vk::DescriptorSet, u64)> = Vec::new();
+    type BufferOffset = u64;
+    type Count = u64;
+    static mut draw_calls: Vec<(vk::Buffer, BufferOffset, vk::DescriptorSet, Count)> = Vec::new();
 
     pub fn init(glfw: &glfw::Glfw, window: &glfw::Window) {
         unsafe {
@@ -219,7 +221,7 @@ pub mod instance {
         }
     }
 
-    /// currently only support win32
+    // currently only support win32
     unsafe fn create_surface(window: &glfw::Window) {
         surface_util = Some(ash::extensions::khr::Surface::new(entry.as_ref().unwrap(), instance.as_ref().unwrap()));
 
@@ -743,9 +745,9 @@ pub mod instance {
     /// pushes a draw "command" to a vector
     /// 
     /// note: writing of descriptor sets is not handled by engine
-    pub fn draw(vertex_buffer: vk::Buffer, descriptor_set: vk::DescriptorSet, vertex_count: u64) {
+    pub fn draw(vertex_buffer: vk::Buffer, offset: u64, descriptor_set: vk::DescriptorSet, vertex_count: u64) {
         unsafe {
-            draw_calls.push((vertex_buffer, descriptor_set, vertex_count));
+            draw_calls.push((vertex_buffer, offset, descriptor_set, vertex_count));
         }
     }
 
@@ -794,7 +796,7 @@ pub mod instance {
                     vk::PipelineBindPoint::GRAPHICS,
                     pipeline_layout,
                     0,
-                    &[call.1],
+                    &[call.2],
                     &[]
                 );
 
@@ -802,12 +804,12 @@ pub mod instance {
                     draw_command_buffer,
                     0,
                     &[call.0],
-                    &[0]
+                    &[call.1]
                 );
 
                 device.as_ref().unwrap().cmd_draw(
                     draw_command_buffer,
-                    call.2 as u32,
+                    call.3 as u32,
                     1,
                     0,
                     0

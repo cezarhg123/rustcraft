@@ -53,6 +53,10 @@ impl Camera {
         &self.uniform
     }
 
+    pub fn position(&self) -> Vec3 {
+        self.position
+    }
+
     pub fn descriptor_buffer_info(&self) -> vk::DescriptorBufferInfo {
         vk::DescriptorBufferInfo::builder()
             .buffer(self.uniform.buffer())

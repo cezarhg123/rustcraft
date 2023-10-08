@@ -1,22 +1,31 @@
+/// TODO
+/// `World` should also contain a large buffer for the model uniform of each chunk
+/// and then give an offset to each chunk
+
+
 use std::{collections::HashMap, mem::size_of};
 use ash::vk;
 use crate::engine::{buffer::Buffer, vertex::Vertex, self};
-use super::block::{Block, BlockType};
+use super::{block::{Block, BlockType}, World};
 
 type LocalPos = glm::I8Vec3;
 pub type GlobalPos = glm::IVec3;
+pub type BufferOffset = u64;
+pub type Size = u64;
+pub type Count = u64;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
     position: glm::IVec3,
     blocks: HashMap<LocalPos, Block>,
-    mesh: Option<(Buffer<Vertex>, Buffer<glm::Mat4>, vk::DescriptorPool, vk::DescriptorSet)>
+    buffer_offset: BufferOffset,
+    mesh: Option<(BufferOffset, Buffer<glm::Mat4>, vk::DescriptorPool, vk::DescriptorSet, Count)>
 }
 
 impl Chunk {
-    pub const SIZE: u8 = 8;
+    pub const SIZE: u8 = 20;
 
-    pub fn new(position: glm::IVec3, chunk_gen: fn(GlobalPos) -> Block) -> Chunk {
+    pub fn new(position: glm::IVec3, chunk_gen: impl Fn(GlobalPos) -> Block) -> Chunk {
         let mut blocks = HashMap::new();
 
         for x in 0..Chunk::SIZE {
@@ -32,11 +41,12 @@ impl Chunk {
         Chunk {
             position,
             blocks,
+            buffer_offset: 0,
             mesh: None
         }
     }
 
-    pub fn draw(&self, camera_buffer_info: vk::DescriptorBufferInfo, atlas_image_info: vk::DescriptorImageInfo) {
+    pub fn write_descriptor(&self, camera_buffer_info: vk::DescriptorBufferInfo, atlas_image_info: vk::DescriptorImageInfo) {
         if let Some(mesh) = &self.mesh {
             unsafe {
                 engine::instance::get_device().update_descriptor_sets(&[
@@ -70,13 +80,23 @@ impl Chunk {
                         .build()
                 ], &[]);
             }
-    
-            engine::instance::draw(mesh.0.buffer(), mesh.3, mesh.0.count());
         }
+    }
+
+    pub fn get_draw_info(&self) -> Option<(BufferOffset, vk::DescriptorSet, Count)> {
+        self.mesh.as_ref().map(|mesh| (mesh.0, mesh.3, mesh.4))
+    }
+
+    pub fn position(&self) -> glm::IVec3 {
+        self.position
+    }
+
+    pub fn buffer_offset(&self) -> BufferOffset {
+        self.buffer_offset
     }
 }
 
-pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 6]) {
+pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 6], world_buffer: *const Buffer<Vertex>, offset: u64) {
     let chunk = unsafe { &mut *chunk.cast_mut() };
 
     let neighbour_chunks = unsafe {[
@@ -239,21 +259,28 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
         }
     }
 
+    let world_buffer = unsafe { &*world_buffer };
+    let ptr = world_buffer.map(offset, World::MAX_VERTICES_PER_CHUNK_BYTES);
+    unsafe {
+        ptr.copy_from_nonoverlapping(vertices.as_ptr(), vertices.len());
+    }
+    world_buffer.unmap();
     
-    let vertex_buffer = Buffer::new(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
     let model = Buffer::new(&[glm::Mat4::new_translation(&glm::vec3(chunk.position.x as f32, -chunk.position.y as f32, chunk.position.z as f32))], vk::BufferUsageFlags::UNIFORM_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT).unwrap();
-     
-    if let Some(vertex_buffer) = vertex_buffer {
+
+    chunk.buffer_offset = offset;
+
+    if vertices.len() > 0 {    
         let descriptor_pool = engine::instance::create_descriptor_pool();
         let descriptor_set = unsafe {
             engine::instance::get_device().allocate_descriptor_sets(
                 &vk::DescriptorSetAllocateInfo::builder()
-                    .descriptor_pool(descriptor_pool)
-                    .set_layouts(&[engine::instance::get_descriptor_set_layout()])
-                    .build()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&[engine::instance::get_descriptor_set_layout()])
+                .build()
             ).unwrap()[0]
         };
         
-        chunk.mesh = Some((vertex_buffer, model, descriptor_pool, descriptor_set));
+        chunk.mesh = Some((offset, model, descriptor_pool, descriptor_set, vertices.len() as u64));
     }
 }

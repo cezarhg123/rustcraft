@@ -17,7 +17,7 @@ pub mod instance {
     use winapi::um::libloaderapi::GetModuleHandleW;
     use crate::WINDOW_TITLE;
 
-    use super::vertex::Vertex;
+    use super::vertex::{Vertex, CompressedVertex};
 
     pub const DEBUG: bool = true;
 
@@ -375,8 +375,8 @@ pub mod instance {
             println!("Created Shader Stages");
         }
 
-        let vertex_binding_description = Vertex::get_binding_description();
-        let vertex_attribute_descriptions = Vertex::get_attribute_descriptions();
+        let vertex_binding_description = CompressedVertex::get_binding_description();
+        let vertex_attribute_descriptions = CompressedVertex::get_attribute_descriptions();
 
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&vertex_binding_description)

@@ -4,7 +4,7 @@ pub mod block;
 use std::{collections::HashMap, mem::size_of};
 use ash::vk;
 use noise::{Perlin, NoiseFn};
-use crate::{timer::Timer, engine::{buffer::Buffer, vertex::Vertex, self}};
+use crate::{timer::Timer, engine::{buffer::Buffer, vertex::{Vertex, CompressedVertex}, self}};
 use self::{chunk::Chunk, block::{BlockType, Block}};
 
 /// has position of 1, 2, 3 instead of going in intervals of `Chunk::SIZE`
@@ -12,7 +12,7 @@ type ChunkPos = glm::I8Vec3;
 
 pub struct World {
     chunks: HashMap<ChunkPos, Chunk>,
-    world_vertex_buffer: Buffer<Vertex>,
+    world_vertex_buffer: Buffer<CompressedVertex>,
     half_distance: i32
 }
 

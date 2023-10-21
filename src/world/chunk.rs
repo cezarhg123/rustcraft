@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, mem::size_of};
 use ash::vk;
-use crate::engine::{buffer::Buffer, vertex::Vertex, self};
+use crate::engine::{buffer::Buffer, vertex::{Vertex, CompressedVertex}, self};
 use super::{block::{Block, BlockType}, World};
 
 type LocalPos = glm::I8Vec3;
@@ -96,7 +96,7 @@ impl Chunk {
     }
 }
 
-pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 6], world_buffer: *const Buffer<Vertex>, offset: u64) {
+pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 6], world_buffer: *const Buffer<CompressedVertex>, offset: u64) {
     let chunk = unsafe { &mut *chunk.cast_mut() };
 
     let neighbour_chunks = unsafe {[
@@ -118,13 +118,13 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
                 let current_block = chunk.blocks.get(&local_pos).unwrap();
                 if current_block.block_type == BlockType::Solid {
                     let mut gen_west_face = || {
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.1)));
 
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32), current_block.side_uv + glm::vec2(0.1, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32), current_block.side_uv + glm::vec2(0.1, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
                     };
                     if let Some(west_block) = chunk.blocks.get(&glm::vec3(x as i8 - 1, y as i8, z as i8)) {
                         if west_block.block_type == BlockType::Air {
@@ -141,13 +141,13 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
                     }
 
                     let mut gen_east_face = || {
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.0, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.0, 0.1)));
 
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
                     };
                     if let Some(east_block) = chunk.blocks.get(&glm::vec3(x as i8 + 1, y as i8, z as i8)) {
                         if east_block.block_type == BlockType::Air {
@@ -164,13 +164,13 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
                     }
 
                     let mut gen_up_face = || {
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.top_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.top_uv + glm::vec2(0.1, 0.1)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.top_uv + glm::vec2(0.0, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.top_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.top_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.top_uv + glm::vec2(0.0, 0.1)));
 
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.top_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.top_uv + glm::vec2(0.1, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.top_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.top_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.top_uv + glm::vec2(0.1, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.top_uv + glm::vec2(0.1, 0.1)));
                     };
                     if let Some(up_block) = chunk.blocks.get(&glm::vec3(x as i8, y as i8 + 1, z as i8)) {
                         if up_block.block_type == BlockType::Air {
@@ -187,13 +187,13 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
                     }
 
                     let mut gen_down_face = || {
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.bottom_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.bottom_uv + glm::vec2(0.1, 0.1)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32), current_block.bottom_uv + glm::vec2(0.0, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.bottom_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.bottom_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32), current_block.bottom_uv + glm::vec2(0.0, 0.1)));
 
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.bottom_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.bottom_uv + glm::vec2(0.1, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.bottom_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.bottom_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.bottom_uv + glm::vec2(0.1, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.bottom_uv + glm::vec2(0.1, 0.1)));
                     };
                     if let Some(down_block) = chunk.blocks.get(&glm::vec3(x as i8, y as i8 - 1, z as i8)) {
                         if down_block.block_type == BlockType::Air {
@@ -210,13 +210,13 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
                     }
 
                     let mut gen_north_face = || {
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.1)));
 
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32 - 1.0), current_block.side_uv + glm::vec2(0.1, 0.1)));
                     };
                     if let Some(north_block) = chunk.blocks.get(&glm::vec3(x as i8, y as i8, z as i8 - 1)) {
                         if north_block.block_type == BlockType::Air {
@@ -233,13 +233,13 @@ pub fn build_mesh(chunk: *const Chunk, neighbour_chunks: [Option<*const Chunk>; 
                     }
 
                     let mut gen_south_face = || {
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.0, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.0, 0.1)));
 
-                        vertices.push(Vertex::new(glm::vec3(x as f32, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.side_uv + glm::vec2(0.1, 0.0)));
-                        vertices.push(Vertex::new(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32, y as f32, z as f32), current_block.side_uv + glm::vec2(0.0, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32, z as f32), current_block.side_uv + glm::vec2(0.1, 0.0)));
+                        vertices.push(CompressedVertex::new_raw(glm::vec3(x as f32 + 1.0, y as f32 + 1.0, z as f32), current_block.side_uv + glm::vec2(0.1, 0.1)));
                     };
                     if let Some(south_block) = chunk.blocks.get(&glm::vec3(x as i8, y as i8, z as i8 + 1)) {
                         if south_block.block_type == BlockType::Air {

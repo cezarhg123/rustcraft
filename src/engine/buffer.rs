@@ -181,6 +181,10 @@ impl<T> Buffer<T> {
         self.buffer
     }
 
+    pub fn memory(&self) -> vk::DeviceMemory {
+        self.memory
+    }
+
     pub fn usage(&self) -> vk::BufferUsageFlags {
         self.usage
     }

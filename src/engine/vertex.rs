@@ -52,7 +52,7 @@ impl Vertex {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct CompressedVertex(u32);
+pub struct CompressedVertex(pub u32);
 
 impl CompressedVertex {
     pub fn new_vertex(vertex: Vertex) -> CompressedVertex {

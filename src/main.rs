@@ -6,7 +6,7 @@ use std::{io::Cursor, mem::size_of, time::Instant};
 use ash::vk;
 use engine::{camera::{Camera, CameraUniform}, buffer::Buffer, vertex::Vertex, texture::Texture};
 use timer::Timer;
-use world::{World, chunk::{Chunk, build_mesh}, block::{Block, BlockType}};
+use world::{World, chunk::{Chunk}, block::{Block, BlockType}};
 
 pub const WINDOW_WIDTH: u32 = 1920;
 pub const WINDOW_HEIGHT: u32 = 1080;
@@ -57,7 +57,7 @@ fn main() {
 
         camera.inputs(&mut window, delta_time);
 
-        world.update_world(camera.position());
+        // world.update_world(camera.position());
 
         world.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());
         // chunk.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());

@@ -1,71 +1,97 @@
-pub mod engine;
-pub mod timer;
-pub mod world;
+pub mod vust;
 
-use std::{io::Cursor, mem::size_of, time::Instant};
+use std::mem::size_of;
 use ash::vk;
-use engine::{camera::{Camera, CameraUniform}, buffer::Buffer, vertex::Vertex, texture::Texture};
-use timer::Timer;
-use world::{World, chunk::{Chunk, build_mesh}, block::{Block, BlockType}};
+use glfw::fail_on_errors;
+use gpu_allocator::vulkan::AllocationCreateDesc;
+use vust::{instance::{get_allocator, get_device, get_mut_allocator, DrawCall}, vertex::Vertex};
 
 pub const WINDOW_WIDTH: u32 = 1920;
 pub const WINDOW_HEIGHT: u32 = 1080;
-pub const WINDOW_TITLE: &str = "RustCraft";
 
 fn main() {
-    let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
+    let mut glfw = glfw::init(fail_on_errors!()).unwrap();
     glfw.window_hint(glfw::WindowHint::ClientApi(glfw::ClientApiHint::NoApi));
-    glfw.window_hint(glfw::WindowHint::Resizable(false));
     glfw.window_hint(glfw::WindowHint::Decorated(false));
+    glfw.window_hint(glfw::WindowHint::Resizable(false));
 
-    let (mut window, _) = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, glfw::WindowMode::Windowed).unwrap();
+    let (mut window, _) = glfw.create_window(WINDOW_WIDTH, WINDOW_HEIGHT, "Rustcraft", glfw::WindowMode::Windowed).unwrap();
+    window.set_all_polling(true);
 
-    engine::instance::init(&glfw, &window);
+    vust::instance::init(&glfw, &window);
 
-    let mut camera = Camera::new(glm::vec3(0.0, 0.0, 0.0), glm::vec3(0.0, 0.0, -1.0));
+    let test_buffer = unsafe {
+        let buffer = get_device().create_buffer(
+            &vk::BufferCreateInfo::builder()
+                .size(size_of::<Vertex>() as u64 * 6)
+                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                .build(),
+            None
+        ).unwrap();
 
-    let texture = Texture::new(image::load(Cursor::new(std::fs::read("textures/atlas.png").unwrap()), image::ImageFormat::Png).unwrap().flipv());
+        let requirements = get_device().get_buffer_memory_requirements(buffer);
 
-    let mut world = World::new(8);
-    // let mut chunk = Chunk::new(glm::vec3(0, -8, 0), |pos| {
-    //     if pos.y < -2 {
-    //         Block::new("Grass Block", "grass_block", BlockType::Solid, glm::vec2(0.0, 0.0), glm::vec2(0.1, 0.0), glm::vec2(0.2, 0.0))
-    //     } else {
-    //         Block::new("Air", "air", BlockType::Air, glm::vec2(0.9, 0.9), glm::vec2(0.9, 0.9), glm::vec2(0.9, 0.9))
-    //     }
-    // });
-    // build_mesh(&chunk, [None, None, None, None, None, None]);
+        let allocation = get_mut_allocator().allocate(
+            &AllocationCreateDesc {
+                name: "test",
+                requirements,
+                location: gpu_allocator::MemoryLocation::CpuToGpu,
+                linear: true,
+                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged
+            }
+        ).unwrap();
 
-    let mut delta_timer = Timer::new();
-    let mut fps_timer = Timer::new();
-    let mut fps_counter = 0;
+        get_device().bind_buffer_memory(buffer, allocation.memory(), allocation.offset()).unwrap();
+
+        let vertices = [
+            Vertex {
+                x: -0.5,
+                y: -0.5,
+                z: 0.0
+            },
+            Vertex {
+                x: 0.5,
+                y: 0.5,
+                z: 0.0
+            },
+            Vertex {
+                x: -0.5,
+                y: 0.5,
+                z: 0.0
+            },
+
+            Vertex {
+                x: -0.5,
+                y: -0.5,
+                z: 0.0
+            },
+            Vertex {
+                x: 0.5,
+                y: -0.5,
+                z: 0.0
+            },
+            Vertex {
+                x: 0.5,
+                y: 0.5,
+                z: 0.0
+            }
+        ];
+
+        let ptr = allocation.mapped_ptr().unwrap().as_ptr() as *mut Vertex;
+        ptr.copy_from_nonoverlapping(vertices.as_ptr(), 6);
+
+        (buffer, allocation)
+    };
 
     while !window.should_close() {
         glfw.poll_events();
 
-        delta_timer.tick();
-        let delta_time = delta_timer.elapsed();
-        delta_timer.reset();
-
-        fps_timer.tick();
-        fps_counter += 1;
-        if fps_timer.elapsed() > 1.0 {
-            println!("FPS: {}", fps_counter);
-            fps_counter = 0;
-            fps_timer.reset();
-        }
-
-        camera.inputs(&mut window, delta_time);
-
-        world.update_world(camera.position());
-
-        world.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());
-        // chunk.draw(camera.descriptor_buffer_info(), texture.descriptor_image_info());
-
-        engine::instance::render_surface();
-    }
-
-    unsafe {
-        engine::instance::get_device().device_wait_idle().unwrap();
+        vust::instance::reset_command_buffer();
+        vust::instance::draw(DrawCall {
+            buffer: test_buffer.0,
+            vertex_count: 6
+        });
+        vust::instance::render_surface();
     }
 }

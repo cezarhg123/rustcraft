@@ -7,8 +7,10 @@ edition = "2021"
 
 [dependencies]
 ash = "0.37.3"
-glfw = { version = "0.52.0", features = ["vulkan", "ash"] }
+glfw = { version = "0.54.0", features = ["vulkan", "ash"] }
 glm = { version = "0.18.0", package = "nalgebra-glm" }
+gpu-allocator = "0.25.0"
 image = "0.24.7"
 noise = "0.8.2"
+paste = "1.0.14"
 winapi = "0.3.9"

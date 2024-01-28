@@ -9,7 +9,7 @@ pub struct Buffer {
 }
 
 impl Buffer {
-    pub fn new<T>(data: &[T], usage: vk::BufferUsageFlags) -> Buffer {
+    pub fn new<T>(data: &[T], usage: vk::BufferUsageFlags, memory_location: gpu_allocator::MemoryLocation) -> Buffer {
         unsafe {
             let buffer = get_device().create_buffer(
                 &vk::BufferCreateInfo::builder()
@@ -26,7 +26,7 @@ impl Buffer {
                 &AllocationCreateDesc {
                     name: format!("buffer// usage: {usage:?}, size: {}", requirements.size).as_str(),
                     requirements,
-                    location: gpu_allocator::MemoryLocation::CpuToGpu,
+                    location: memory_location,
                     linear: true,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged
                 }

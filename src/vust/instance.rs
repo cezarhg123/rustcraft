@@ -460,7 +460,14 @@ unsafe fn create_graphics_pipeline() {
         .stage_flags(vk::ShaderStageFlags::VERTEX)
         .build();
 
-    let bindings = [camera_binding];
+    let texture_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(1)
+        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::FRAGMENT)
+        .build();
+
+    let bindings = [camera_binding, texture_binding];
 
     let local_descriptor_set_layout = device.as_ref().unwrap().create_descriptor_set_layout(
         &vk::DescriptorSetLayoutCreateInfo::builder()

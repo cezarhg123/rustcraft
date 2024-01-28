@@ -27,7 +27,7 @@ impl Camera {
         let projection = glm::perspective_fov_rh_zo(45.0f32.to_radians(), WINDOW_WIDTH as f32, WINDOW_HEIGHT as f32, 0.1, 1000.0);
         let view = glm::look_at_rh(&position, &(position + glm::vec3(0.0, 0.0, -1.0)), &UP);
 
-        let uniform_buffer = Buffer::new(&[CameraUniform { projection, view }], vk::BufferUsageFlags::UNIFORM_BUFFER);
+        let uniform_buffer = Buffer::new(&[CameraUniform { projection, view }], vk::BufferUsageFlags::UNIFORM_BUFFER, gpu_allocator::MemoryLocation::CpuToGpu);
 
         Camera {
             position,

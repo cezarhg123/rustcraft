@@ -28,6 +28,7 @@ pub mod instance;
 pub mod camera;
 pub mod vertex;
 pub mod buffer;
+pub mod texture;
 
 use ash::vk;
 use self::instance::{begin_single_exec_command, end_single_exec_command, get_device};

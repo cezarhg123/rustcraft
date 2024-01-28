@@ -27,6 +27,7 @@ macro_rules! make_static {
 pub mod instance;
 pub mod camera;
 pub mod vertex;
+pub mod buffer;
 
 use ash::vk;
 use self::instance::{begin_single_exec_command, end_single_exec_command, get_device};

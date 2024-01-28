@@ -1,10 +1,12 @@
 pub mod vust;
+pub mod timer;
 
 use std::mem::size_of;
 use ash::vk;
 use glfw::fail_on_errors;
 use gpu_allocator::vulkan::AllocationCreateDesc;
-use vust::{instance::{get_allocator, get_device, get_mut_allocator, DrawCall}, vertex::Vertex};
+use timer::Timer;
+use vust::{buffer::Buffer, camera::Camera, instance::{get_allocator, get_device, get_mut_allocator, DrawCall}, vertex::Vertex};
 
 pub const WINDOW_WIDTH: u32 = 1920;
 pub const WINDOW_HEIGHT: u32 = 1080;
@@ -20,31 +22,7 @@ fn main() {
 
     vust::instance::init(&glfw, &window);
 
-    let test_buffer = unsafe {
-        let buffer = get_device().create_buffer(
-            &vk::BufferCreateInfo::builder()
-                .size(size_of::<Vertex>() as u64 * 6)
-                .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                .build(),
-            None
-        ).unwrap();
-
-        let requirements = get_device().get_buffer_memory_requirements(buffer);
-
-        let allocation = get_mut_allocator().allocate(
-            &AllocationCreateDesc {
-                name: "test",
-                requirements,
-                location: gpu_allocator::MemoryLocation::CpuToGpu,
-                linear: true,
-                allocation_scheme: gpu_allocator::vulkan::AllocationScheme::GpuAllocatorManaged
-            }
-        ).unwrap();
-
-        get_device().bind_buffer_memory(buffer, allocation.memory(), allocation.offset()).unwrap();
-
-        let vertices = [
+    let vertices = [
             Vertex {
                 x: -0.5,
                 y: -0.5,
@@ -77,21 +55,53 @@ fn main() {
                 z: 0.0
             }
         ];
+    
+    let test_buffer = Buffer::new(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER);
 
-        let ptr = allocation.mapped_ptr().unwrap().as_ptr() as *mut Vertex;
-        ptr.copy_from_nonoverlapping(vertices.as_ptr(), 6);
+    let mut camera = Camera::new(glm::vec3(0.0, 0.0, 3.0));
 
-        (buffer, allocation)
+    let descriptor_pool = vust::instance::create_descriptor_pool();
+    let descriptor_set = unsafe {
+        get_device().allocate_descriptor_sets(
+            &vk::DescriptorSetAllocateInfo::builder()
+                .descriptor_pool(descriptor_pool)
+                .set_layouts(&[*vust::instance::get_descriptor_set_layout()])
+                .build()
+        ).unwrap()[0]
     };
 
+    let mut delta_timer = Timer::new();
     while !window.should_close() {
         glfw.poll_events();
 
+        delta_timer.tick();
+        let delta_time = delta_timer.elapsed();
+        delta_timer.reset();
+
+        camera.inputs(&mut window, delta_time);
+
         vust::instance::reset_command_buffer();
+        unsafe {
+            get_device().update_descriptor_sets(
+                &[
+                    vk::WriteDescriptorSet::builder()
+                        .buffer_info(&[camera.buffer_info()])
+                        .dst_binding(0)
+                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                        .dst_set(descriptor_set)
+                        .dst_array_element(0)
+                        .build()
+                ],
+                &[]
+            );
+        }
         vust::instance::draw(DrawCall {
-            buffer: test_buffer.0,
+            buffer: test_buffer.buffer(),
+            descriptor_set,
             vertex_count: 6
         });
         vust::instance::render_surface();
     }
+
+    unsafe { get_device().device_wait_idle().unwrap(); }
 }

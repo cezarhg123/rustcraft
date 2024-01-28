@@ -48,7 +48,7 @@ make_static!(allocator, gpu_allocator::vulkan::Allocator);
 #[derive(Debug, Clone, Copy)]
 pub struct DrawCall {
     pub buffer: vk::Buffer,
-    // pub descriptor_set: vk::DescriptorSet,
+    pub descriptor_set: vk::DescriptorSet,
     pub vertex_count: u32
 }
 
@@ -453,7 +453,14 @@ unsafe fn create_graphics_pipeline() {
         println!("Created Color Blend State Info");
     }
 
-    let bindings = [];
+    let camera_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(0)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .build();
+
+    let bindings = [camera_binding];
 
     let local_descriptor_set_layout = device.as_ref().unwrap().create_descriptor_set_layout(
         &vk::DescriptorSetLayoutCreateInfo::builder()
@@ -668,14 +675,14 @@ pub fn render_surface() {
         device.as_ref().unwrap().cmd_bind_pipeline(get_draw_command_buffer().clone(), vk::PipelineBindPoint::GRAPHICS, get_graphics_pipeline().clone());
 
         for draw_call in draw_calls.iter() {
-            // get_device().cmd_bind_descriptor_sets(
-            //     get_draw_command_buffer().clone(),
-            //     vk::PipelineBindPoint::GRAPHICS,
-            //     get_pipeline_layout().clone(),
-            //     0,
-            //     &[draw_call.descriptor_set],
-            //     &[],
-            // );
+            get_device().cmd_bind_descriptor_sets(
+                get_draw_command_buffer().clone(),
+                vk::PipelineBindPoint::GRAPHICS,
+                get_pipeline_layout().clone(),
+                0,
+                &[draw_call.descriptor_set],
+                &[],
+            );
 
             get_device().cmd_bind_vertex_buffers(
                 get_draw_command_buffer().clone(),

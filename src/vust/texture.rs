@@ -14,6 +14,7 @@ pub struct Texture {
 impl Texture {
     pub fn new(dynamic_image: image::DynamicImage) -> Texture {
         unsafe {
+            let dynamic_image = dynamic_image.flipv();
             let image_bytes = dynamic_image.as_bytes();
             let dimensions = dynamic_image.dimensions();
 

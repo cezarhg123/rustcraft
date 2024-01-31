@@ -10,7 +10,11 @@ layout(binding = 0) uniform Camera {
     mat4 view;
 };
 
+layout(binding = 2) uniform Model {
+    mat4 model;
+};
+
 void main() {
     UV = vUV;
-    gl_Position = projection * view * vec4(vPos, 1.0);
+    gl_Position = projection * view * model * vec4(vPos.x, vPos.y * -1.0, vPos.z, 1.0);
 }

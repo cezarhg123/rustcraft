@@ -467,7 +467,14 @@ unsafe fn create_graphics_pipeline() {
         .stage_flags(vk::ShaderStageFlags::FRAGMENT)
         .build();
 
-    let bindings = [camera_binding, texture_binding];
+    let model_binding = vk::DescriptorSetLayoutBinding::builder()
+        .binding(2)
+        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+        .descriptor_count(1)
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .build();
+
+    let bindings = [camera_binding, texture_binding, model_binding];
 
     let local_descriptor_set_layout = device.as_ref().unwrap().create_descriptor_set_layout(
         &vk::DescriptorSetLayoutCreateInfo::builder()
@@ -746,6 +753,10 @@ pub fn create_descriptor_pool() -> vk::DescriptorPool {
                     },
                     vk::DescriptorPoolSize {
                         ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                        descriptor_count: 1
+                    },
+                    vk::DescriptorPoolSize {
+                        ty: vk::DescriptorType::UNIFORM_BUFFER,
                         descriptor_count: 1
                     }
                 ])

@@ -31,8 +31,7 @@ impl World {
                 }
             }
         });
-        // todo: this is fucked, implement something better later
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        
         multithread.add_job(job::Job::GenerateMesh {
             chunk: PtrWrapper::new(chunks.get(&glm::zero()).unwrap()),
             neighbors: [None, None, None, None, None, None]

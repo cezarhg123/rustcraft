@@ -11,7 +11,8 @@ pub struct Chunk {
     descriptor_pool: vk::DescriptorPool,
     descriptor_set: vk::DescriptorSet,
     model_uniform: Buffer,
-    chunk_mesh: Option<(Buffer, VertexCount)>
+    chunk_mesh: Option<(Buffer, VertexCount)>,
+    terrain_generated: bool
 }
 
 impl Chunk {
@@ -33,7 +34,8 @@ impl Chunk {
                 ).unwrap()[0]
             },
             model_uniform: Buffer::new(&[glm::Mat4::new_scaling(1.0)], vk::BufferUsageFlags::UNIFORM_BUFFER, gpu_allocator::MemoryLocation::CpuToGpu),
-            chunk_mesh: None
+            chunk_mesh: None,
+            terrain_generated: false
         }
     }
 
@@ -98,9 +100,13 @@ impl Chunk {
                 }
             }
         }
+
+        self.terrain_generated = true;
     }
 
     pub fn generate_mesh(&mut self, neighbours: &[Option<PtrWrapper<Chunk>>; 6]) {
+        while !self.terrain_generated {} // wait for terrain to be generated
+
         let mut vertices = Vec::new();
         
         for x in 0..Chunk::SIZE {

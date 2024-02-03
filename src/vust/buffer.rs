@@ -2,6 +2,7 @@ use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme};
 use super::instance::{get_device, get_mut_allocator};
 
+#[derive(Debug)]
 pub struct Buffer {
     usage: vk::BufferUsageFlags,
     buffer: vk::Buffer,

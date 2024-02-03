@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use ash::vk;
 use crate::{ptr_wrapper::PtrWrapper, vust::{self, buffer::Buffer, instance::DrawCall, vertex::Vertex}};
-use super::{block::BlockID, ALL_BLOCKS};
+use super::{block::{Block, BlockID}, ALL_BLOCKS};
 
 type VertexCount = usize;
 
+/// global position of chunk = chunk position * chunk size
+#[derive(Debug)]
 pub struct Chunk {
     position: glm::IVec3,
     blocks: HashMap<glm::I8Vec3, BlockID>,
@@ -33,7 +35,7 @@ impl Chunk {
                         .build()
                 ).unwrap()[0]
             },
-            model_uniform: Buffer::new(&[glm::Mat4::new_scaling(1.0)], vk::BufferUsageFlags::UNIFORM_BUFFER, gpu_allocator::MemoryLocation::CpuToGpu),
+            model_uniform: Buffer::new(&[glm::Mat4::new_translation(&glm::vec3(position.x as f32 * Chunk::SIZE as f32, -position.y as f32 * Chunk::SIZE as f32, position.z as f32 * (Chunk::SIZE as f32 - 1.0)))], vk::BufferUsageFlags::UNIFORM_BUFFER, gpu_allocator::MemoryLocation::CpuToGpu),
             chunk_mesh: None,
             terrain_generated: false
         }
@@ -92,7 +94,7 @@ impl Chunk {
         for x in 0..Chunk::SIZE {
             for y in 0..Chunk::SIZE {
                 for z in 0..Chunk::SIZE {
-                    let position = self.position + glm::vec3(x as i32, y as i32, -z as i32);
+                    let position = (self.position * Chunk::SIZE as i32) + glm::vec3(x as i32, y as i32, -z as i32);
                     self.blocks.insert(
                         glm::vec3(x, y, z),
                         gen_func(position)
@@ -120,24 +122,105 @@ impl Chunk {
 
                     let current_block = ALL_BLOCKS[self.blocks[&glm::vec3(x, y, z)]];
 
-                    if let Some(west_block) = self.blocks.get(&glm::vec3(x - 1, y, z)) {
-                        if *west_block == 0 {
-                            vertices.append(&mut west_face_vertices(glm::vec3(x as f32, y as f32, -z as f32), current_block.get_uv()));
-                        }
-                    } else {
-                        if let Some(neighbour) = neighbours[0].as_ref() {
-                            if neighbour.as_ref().blocks[&glm::vec3(Chunk::SIZE - 1, y, z)] == 0 {
-                                vertices.append(&mut west_face_vertices(glm::vec3(x as f32, y as f32, -z as f32), current_block.get_uv()));
-                            }
-                        } else {
-                            vertices.append(&mut west_face_vertices(glm::vec3(x as f32, y as f32, -z as f32), current_block.get_uv()));
-                        }
-                    }
+                    // if you see '-z', its because for the chunk, +z = forward, but for renderer +z = backward
+
+                    // west face
+                    generate_face(
+                        glm::vec3(x as f32, y as f32, z as f32),
+                        &current_block,
+                        self.blocks.get(&glm::vec3(x - 1, y, z)),
+                        &mut vertices,
+                        neighbours[0].as_ref(),
+                        glm::vec3(Chunk::SIZE - 1, y, z),
+                        west_face_vertices
+                    );
+
+                    // east face
+                    generate_face(
+                        glm::vec3(x as f32, y as f32, z as f32),
+                        &current_block,
+                        self.blocks.get(&glm::vec3(x + 1, y, z)),
+                        &mut vertices,
+                        neighbours[1].as_ref(),
+                        glm::vec3(0, y, z),
+                        east_face_vertices
+                    );
+
+                    // down face
+                    generate_face(
+                        glm::vec3(x as f32, y as f32, z as f32),
+                        &current_block,
+                        self.blocks.get(&glm::vec3(x, y - 1, z)),
+                        &mut vertices,
+                        neighbours[2].as_ref(),
+                        glm::vec3(x, Chunk::SIZE - 1, z),
+                        down_face_vertices
+                    );
+
+                    // up face
+                    generate_face(
+                        glm::vec3(x as f32, y as f32, z as f32),
+                        &current_block,
+                        self.blocks.get(&glm::vec3(x, y + 1, z)),
+                        &mut vertices,
+                        neighbours[3].as_ref(),
+                        glm::vec3(x, 0, z),
+                        up_face_vertices
+                    );
+
+                    // north face
+                    generate_face(
+                        glm::vec3(x as f32, y as f32, z as f32),
+                        &current_block,
+                        self.blocks.get(&glm::vec3(x, y, z + 1)),
+                        &mut vertices,
+                        neighbours[4].as_ref(),
+                        glm::vec3(x, y, 0),
+                        south_face_vertices
+                    );
+
+                    // south face
+                    generate_face(
+                        glm::vec3(x as f32, y as f32, z as f32),
+                        &current_block,
+                        self.blocks.get(&glm::vec3(x, y, z - 1)),
+                        &mut vertices,
+                        neighbours[5].as_ref(),
+                        glm::vec3(x, y, Chunk::SIZE - 1),
+                        north_face_vertices
+                    );
+
                 }
             }
         }
+        
+        if !vertices.is_empty() {
+            self.chunk_mesh = Some((Buffer::new(vertices.as_slice(), vk::BufferUsageFlags::VERTEX_BUFFER, gpu_allocator::MemoryLocation::CpuToGpu), vertices.len()));
+        }
+    }
+}
 
-        self.chunk_mesh = Some((Buffer::new(&vertices, vk::BufferUsageFlags::VERTEX_BUFFER, gpu_allocator::MemoryLocation::CpuToGpu), vertices.len()));
+fn generate_face(
+    block_pos: glm::Vec3,
+    current_block: &Block,
+    neighbour_block: Option<&BlockID>,
+    vertices: &mut Vec<Vertex>,
+    neighbour_chunk: Option<&PtrWrapper<Chunk>>,
+    neighbour_block_pos: glm::I8Vec3,
+    face_vertices_func: fn(glm::Vec3, glm::Vec2) -> Vec<Vertex>
+) {
+    if let Some(west_block) = neighbour_block {
+        if *west_block == 0 {
+            vertices.append(&mut face_vertices_func(block_pos, current_block.get_uv()));
+        }
+    } else {
+        if let Some(neighbour) = neighbour_chunk {
+            if neighbour.as_ref().blocks[&neighbour_block_pos] == 0 {
+                vertices.append(&mut face_vertices_func(block_pos, current_block.get_uv()));
+            }
+        } else {
+            vertices.append(&mut face_vertices_func(block_pos, current_block.get_uv()));
+        }
     }
 }
 
@@ -150,5 +233,67 @@ fn west_face_vertices(pos: glm::Vec3, uv: glm::Vec2) -> Vec<Vertex> {
         Vertex::new_glm(pos + glm::vec3(0.0, 0.0, -1.0), uv),
         Vertex::new_glm(pos, uv + glm::vec2(0.1, 0.0)),
         Vertex::new_glm(pos + glm::vec3(0.0, 1.0, 0.0), uv + glm::vec2(0.1, 0.1))
+    ]
+}
+
+fn east_face_vertices(pos: glm::Vec3, uv: glm::Vec2) -> Vec<Vertex> {
+    vec![
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, 0.0), uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, -1.0), uv + glm::vec2(0.1, 0.1)),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, 0.0), uv + glm::vec2(0.0, 0.1)),
+
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, 0.0), uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, -1.0), uv + glm::vec2(0.1, 0.0)),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, -1.0), uv + glm::vec2(0.1, 0.1))
+    ]
+}
+
+fn down_face_vertices(pos: glm::Vec3, uv: glm::Vec2) -> Vec<Vertex> {
+    vec![
+        Vertex::new_glm(pos + glm::vec3(0.0, 0.0, -1.0), uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, 0.0), uv + glm::vec2(0.1, 0.1)),
+        Vertex::new_glm(pos, uv + glm::vec2(0.0, 0.1)),
+
+        Vertex::new_glm(pos + glm::vec3(0.0, 0.0, -1.0), uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, -1.0), uv + glm::vec2(0.1, 0.0)),
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, 0.0), uv + glm::vec2(0.1, 0.1))
+    ]
+}
+
+fn up_face_vertices(pos: glm::Vec3, uv: glm::Vec2) -> Vec<Vertex> {
+    vec![
+        Vertex::new_glm(pos + glm::vec3(0.0, 1.0, 0.0), uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, -1.0), uv + glm::vec2(0.1, 0.1)),
+        Vertex::new_glm(pos + glm::vec3(0.0, 1.0, -1.0), uv + glm::vec2(0.0, 0.1)),
+
+        Vertex::new_glm(pos + glm::vec3(0.0, 1.0, 0.0), uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, 0.0), uv + glm::vec2(0.1, 0.0)),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, -1.0), uv + glm::vec2(0.1, 0.1))
+    ]
+}
+
+/// north = -z
+fn north_face_vertices(pos: glm::Vec3, uv: glm::Vec2) -> Vec<Vertex> {
+    vec![
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, -1.0), uv),
+        Vertex::new_glm(pos + glm::vec3(0.0, 1.0, -1.0), uv + glm::vec2(0.1, 0.1)),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, -1.0), uv + glm::vec2(0.0, 0.1)),
+
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, -1.0), uv),
+        Vertex::new_glm(pos + glm::vec3(0.0, 0.0, -1.0), uv + glm::vec2(0.1, 0.0)),
+        Vertex::new_glm(pos + glm::vec3(0.0, 1.0, -1.0), uv + glm::vec2(0.1, 0.1))
+    ]
+}
+
+/// south = +z
+fn south_face_vertices(pos: glm::Vec3, uv: glm::Vec2) -> Vec<Vertex> {
+    vec![
+        Vertex::new_glm(pos, uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, 0.0), uv + glm::vec2(0.1, 0.1)),
+        Vertex::new_glm(pos + glm::vec3(0.0, 1.0, 0.0), uv + glm::vec2(0.0, 0.1)),
+
+        Vertex::new_glm(pos, uv),
+        Vertex::new_glm(pos + glm::vec3(1.0, 0.0, 0.0), uv + glm::vec2(0.1, 0.0)),
+        Vertex::new_glm(pos + glm::vec3(1.0, 1.0, 0.0), uv + glm::vec2(0.1, 0.1))
     ]
 }

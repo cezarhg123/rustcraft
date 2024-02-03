@@ -25,7 +25,7 @@ fn main() {
 
     vust::instance::init(&glfw, &window);
 
-    let mut camera = Camera::new(glm::vec3(-2.0, 0.0, 3.0));
+    let mut camera = Camera::new(glm::vec3(-2.0, -10.0, 100.0));
 
     let world = World::new();
 

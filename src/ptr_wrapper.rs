@@ -2,7 +2,7 @@
 /// wrapper for pointers, doesnt actually hold the data.
 /// 
 /// very unsafe but fuck rust i know what im doing
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct PtrWrapper<T> {
     ptr: *const T
 }

@@ -2,7 +2,7 @@ use std::{ffi::{CString, CStr}, mem::size_of, ptr::null};
 use ash::vk;
 use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use winapi::um::libloaderapi::GetModuleHandleW;
-use super::{vertex::Vertex, vulkan_debug_callback, DEBUG};
+use super::{find_memory_type, transition_image_layout, vertex::Vertex, vulkan_debug_callback, DEBUG};
 
 make_static!(entry, ash::Entry);
 make_static!(instance, ash::Instance);
@@ -29,6 +29,10 @@ make_static!(extent, vk::Extent2D);
 
 static mut swapchain_image_views: Vec<vk::ImageView> = Vec::new();
 static mut swapchain_framebuffers: Vec<vk::Framebuffer> = Vec::new();
+
+make_static!(depth_image, vk::Image);
+make_static!(depth_image_memory, vk::DeviceMemory);
+make_static!(depth_image_view, vk::ImageView);
 
 make_static!(render_pass, vk::RenderPass);
 make_static!(pipeline_layout, vk::PipelineLayout);
@@ -414,7 +418,7 @@ unsafe fn create_graphics_pipeline() {
         .rasterizer_discard_enable(false)
         .polygon_mode(vk::PolygonMode::FILL)
         .line_width(1.0)
-        .cull_mode(vk::CullModeFlags::NONE)
+        .cull_mode(vk::CullModeFlags::BACK)
         .front_face(vk::FrontFace::CLOCKWISE)
         .depth_bias_enable(false)
         .build();
@@ -492,6 +496,79 @@ unsafe fn create_graphics_pipeline() {
         None
     ).unwrap();
 
+    let depth_format = {
+        let wanted_formats = [vk::Format::D24_UNORM_S8_UINT, vk::Format::D32_SFLOAT_S8_UINT];
+
+        let mut selected_format = None;
+
+        for format in wanted_formats {
+            let props = instance.as_ref().unwrap().get_physical_device_format_properties(*get_gpu(), format);
+
+            if props.optimal_tiling_features.contains(vk::FormatFeatureFlags::DEPTH_STENCIL_ATTACHMENT) {
+                selected_format = Some(format);
+            }
+        }
+
+        selected_format.unwrap()
+    };
+
+    depth_image = device.as_ref().unwrap().create_image(
+        &vk::ImageCreateInfo::builder()
+            .image_type(vk::ImageType::TYPE_2D)
+            .extent(vk::Extent3D {
+                width: extent.unwrap().width,
+                height: extent.unwrap().height,
+                depth: 1,
+            })
+            .mip_levels(1)
+            .array_layers(1)
+            .format(depth_format)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .tiling(vk::ImageTiling::OPTIMAL)
+            .usage(vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT)
+            .sharing_mode(vk::SharingMode::EXCLUSIVE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .build(),
+        None
+    ).ok();
+
+    depth_image_memory = {
+        let memory_requirements = device.as_ref().unwrap().get_image_memory_requirements(*get_depth_image());
+
+        device.as_ref().unwrap().allocate_memory(
+            &vk::MemoryAllocateInfo::builder()
+                .allocation_size(memory_requirements.size)
+                .memory_type_index(find_memory_type(gpu_memory_properties.unwrap(), memory_requirements.memory_type_bits, vk::MemoryPropertyFlags::DEVICE_LOCAL).unwrap())
+                .build(),
+            None
+        ).ok()
+    };
+    device.as_ref().unwrap().bind_image_memory(*get_depth_image(), *get_depth_image_memory(), 0).unwrap();
+
+    depth_image_view = device.as_ref().unwrap().create_image_view(
+        &vk::ImageViewCreateInfo::builder()
+            .image(*get_depth_image())
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(depth_format)
+            .components(vk::ComponentMapping {
+                r: vk::ComponentSwizzle::IDENTITY,
+                g: vk::ComponentSwizzle::IDENTITY,
+                b: vk::ComponentSwizzle::IDENTITY,
+                a: vk::ComponentSwizzle::IDENTITY
+            })
+            .subresource_range(vk::ImageSubresourceRange {
+                aspect_mask: vk::ImageAspectFlags::DEPTH,
+                base_mip_level: 0,
+                level_count: 1,
+                base_array_layer: 0,
+                layer_count: 1
+            })
+            .build(),
+        None
+    ).ok();
+
+    transition_image_layout(*get_depth_image(), vk::ImageLayout::UNDEFINED, vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
     render_pass = {
         let color_attachment = vk::AttachmentDescription::builder()
             .format(swapchain_format.unwrap().format)
@@ -504,15 +581,32 @@ unsafe fn create_graphics_pipeline() {
             .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
             .build();
 
+        let depth_attachment = vk::AttachmentDescription::builder()
+            .format(depth_format)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .load_op(vk::AttachmentLoadOp::CLEAR)
+            .store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
+            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
+            .initial_layout(vk::ImageLayout::UNDEFINED)
+            .final_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+            .build();
+
         let color_attachment_ref = vk::AttachmentReference::builder()
             .attachment(0)
             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build();
+
+        let depth_attachment_ref = vk::AttachmentReference::builder()
+            .attachment(1)
+            .layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
             .build();
 
         let color_attachments = [color_attachment_ref];
         let subpass = vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(&color_attachments)
+            .depth_stencil_attachment(&depth_attachment_ref)
             .build();
 
         let subpass_dependency = vk::SubpassDependency::builder()
@@ -526,7 +620,7 @@ unsafe fn create_graphics_pipeline() {
 
         device.as_ref().unwrap().create_render_pass(
             &vk::RenderPassCreateInfo::builder()
-                .attachments(&[color_attachment])
+                .attachments(&[color_attachment, depth_attachment])
                 .subpasses(&[subpass])
                 .dependencies(&[subpass_dependency])
                 .build(),
@@ -536,6 +630,15 @@ unsafe fn create_graphics_pipeline() {
     if DEBUG {
         println!("Created Render Pass");
     }
+
+    let depth_stencil_info = vk::PipelineDepthStencilStateCreateInfo::builder()
+        .depth_test_enable(true)
+        .depth_write_enable(true)
+        .depth_compare_op(vk::CompareOp::LESS)
+        .depth_bounds_test_enable(false)
+        .stencil_test_enable(false)
+        .build();
+
     set_graphics_pipeline(device.as_ref().unwrap().create_graphics_pipelines(vk::PipelineCache::null(), &[
         vk::GraphicsPipelineCreateInfo::builder()
             .stages(&shader_stages)
@@ -544,6 +647,7 @@ unsafe fn create_graphics_pipeline() {
             .viewport_state(&viewport_state_info)
             .rasterization_state(&rasterizer_info)
             .multisample_state(&multisample_info)
+            .depth_stencil_state(&depth_stencil_info)
             .color_blend_state(&color_blend_info)
             .layout(local_pipeline_layout)
             .render_pass(get_render_pass().clone())
@@ -564,7 +668,7 @@ unsafe fn create_framebuffers() {
         device.as_ref().unwrap().create_framebuffer(
             &vk::FramebufferCreateInfo::builder()
                 .render_pass(get_render_pass().clone())
-                .attachments(&[*image_view])
+                .attachments(&[*image_view, *get_depth_image_view()])
                 .width(extent.unwrap().width)
                 .height(extent.unwrap().height)
                 .layers(1)

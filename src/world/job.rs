@@ -1,6 +1,7 @@
 use crate::ptr_wrapper::PtrWrapper;
 use super::{block::BlockID, chunk::Chunk};
 
+#[derive(Debug)]
 pub enum Job {
     GenerateTerrain {
         chunk: PtrWrapper<Chunk>,
@@ -15,14 +16,17 @@ pub enum Job {
         /// * 4 = -z
         /// * 5 = +z
         neighbors: [Option<PtrWrapper<Chunk>>; 6]
-    }
+    },
+    /// kill yourself
+    KYS
 }
 
 impl Job {
     pub fn do_job(&self) {
         match self {
             Job::GenerateTerrain {..} => self.generate_terrain(),
-            Job::GenerateMesh {..} => self.generate_mesh()
+            Job::GenerateMesh {..} => self.generate_mesh(),
+            Job::KYS => {}
         }
     }
 

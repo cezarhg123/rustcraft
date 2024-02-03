@@ -6,10 +6,10 @@ pub mod job;
 use std::{collections::HashMap, io::Cursor};
 use ash::vk;
 use crate::{ptr_wrapper::PtrWrapper, vust::texture::Texture};
-use self::{block::Block, chunk::Chunk, multithread::Multithread};
+use self::{block::Block, chunk::Chunk, multithread::TaskThread};
 
 pub struct World {
-    multithread: Multithread,
+    task_thread: TaskThread,
     texture_atlas: Texture,
     chunks: HashMap<glm::IVec3, Chunk>,
 }
@@ -29,12 +29,12 @@ impl World {
         }
 
 
-        let mut multithread = Multithread::new(4);
+        let task_thread = TaskThread::new(4);
         for x in -World::DISTANCE..World::DISTANCE {
             for y in -World::DISTANCE..World::DISTANCE {
                 for z in -World::DISTANCE..World::DISTANCE {
 
-                    multithread.add_job(job::Job::GenerateTerrain {
+                    task_thread.add_job(job::Job::GenerateTerrain {
                         chunk: PtrWrapper::new(chunks.get(&glm::vec3(x, y, z)).unwrap()),
                         gen_func: |position| {
                             if position.y < 0 {
@@ -50,12 +50,12 @@ impl World {
             }
         }
 
-        multithread.wait_for_idle();
+        task_thread.wait_for_idle();
 
         for x in -World::DISTANCE..World::DISTANCE {
             for y in -World::DISTANCE..World::DISTANCE {
                 for z in -World::DISTANCE..World::DISTANCE {
-                    multithread.add_job(job::Job::GenerateMesh {
+                    task_thread.add_job(job::Job::GenerateMesh {
                         chunk: PtrWrapper::new(chunks.get(&glm::vec3(x, y, z)).unwrap()),
                         neighbors: [
                             chunks.get(&glm::vec3(x - 1, y, z)).map(|c| PtrWrapper::new(c)),
@@ -78,7 +78,7 @@ impl World {
                 ).unwrap()
             ),
             chunks,
-            multithread
+            task_thread
         }
     }
 

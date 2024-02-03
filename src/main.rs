@@ -30,18 +30,18 @@ fn main() {
     let world = World::new();
 
     let mut delta_timer = Timer::new();
-    // let mut fps_timer = Timer::new();
-    // let mut fps_frames = 0;
+    let mut fps_timer = Timer::new();
+    let mut fps_frames = 0;
     while !window.should_close() {
         glfw.poll_events();
 
-        // fps_timer.tick();
-        // fps_frames += 1;
-        // if fps_timer.elapsed() >= 1.0 {
-        //     println!("FPS: {}", fps_frames);
-        //     fps_timer.reset();
-        //     fps_frames = 0;
-        // }
+        fps_timer.tick();
+        fps_frames += 1;
+        if fps_timer.elapsed() >= 1.0 {
+            println!("FPS: {}", fps_frames);
+            fps_timer.reset();
+            fps_frames = 0;
+        }
 
         delta_timer.tick();
         let delta_time = delta_timer.elapsed();

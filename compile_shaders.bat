@@ -1,3 +1,3 @@
-glslc.exe "shaders/default.vert" -o "shaders/default.vert.spv"
-glslc.exe "shaders/default.frag" -o "shaders/default.frag.spv"
+glslc.exe "shaders/%1.vert" -o "shaders/%1.vert.spv"
+glslc.exe "shaders/%1.frag" -o "shaders/%1.frag.spv"
 pause

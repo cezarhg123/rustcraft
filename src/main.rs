@@ -1,6 +1,16 @@
+pub mod vertex;
+pub mod camera;
+pub mod world;
+
+use std::{io::Cursor, time::Instant};
+
+use camera::Camera;
 use glfw::fail_on_errors;
-use vust::{create_info::VustCreateInfo, Vust};
+use image::GenericImageView;
+use vertex::Vertex;
+use vust::{buffer::Buffer, create_info::VustCreateInfo, pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline, GraphicsPipelineCreateInfo}, texture::Texture, write_descriptor_info::WriteDescriptorInfo, Vust};
 use winapi::um::libloaderapi::GetModuleHandleW;
+use world::World;
 
 pub const WINDOW_WIDTH: u32 = 1920;
 pub const WINDOW_HEIGHT: u32 = 1080;
@@ -13,7 +23,7 @@ fn main() {
     glfw.window_hint(glfw::WindowHint::Decorated(false));
 
 
-    let (window, _) = glfw
+    let (mut window, _) = glfw
         .create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, glfw::WindowMode::Windowed)
         .unwrap();
 
@@ -31,9 +41,35 @@ fn main() {
             .with_framebuffer_size((window.get_framebuffer_size().0 as usize, window.get_framebuffer_size().1 as usize))
     );
 
-    
+    let mut camera = Camera::new(glm::vec3(0.0, 0.0, -2.0), &mut vust);
 
+    let mut world = World::new(8, &mut vust);
+
+    let mut frames = 0;
+    let mut frame_time_instant = Instant::now();
+    let mut delta_time_instant = Instant::now();
     while !window.should_close() {
         glfw.poll_events();
+        
+        let delta_time = delta_time_instant.elapsed().as_secs_f32();
+        delta_time_instant = Instant::now();
+
+        if frame_time_instant.elapsed().as_secs_f32() >= 1.0 {
+            println!("FPS: {}", frames);
+            frames = 0;
+            frame_time_instant = Instant::now();
+        } else {
+            frames += 1;
+        }
+
+        camera.inputs(&mut window, delta_time);
+
+        vust.reset_command_buffer();
+        world.draw(&mut vust, camera.buffer_info());
+        vust.render_surface();
     }
+
+    vust.wait_idle();
+    world.cleanup(&mut vust);
+    camera.cleanup(&mut vust);
 }

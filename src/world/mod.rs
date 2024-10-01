@@ -97,6 +97,10 @@ impl World {
                                 return Blocks::DIRT.block_id();
                             }
 
+                            if pos.x >= 14 && pos.x <= 18 && pos.y == 5 && pos.z == 5 {
+                                return Blocks::GRASS_BLOCK.block_id();
+                            }
+
                             Blocks::AIR.block_id()
                         }
                     });
@@ -113,6 +117,14 @@ impl World {
                         blocks: chunk.get_blocks(),
                         vertex_buffer: chunk.get_vertex_buffer(),
                         vertex_count: chunk.get_vertex_count(),
+                        neighbour_blocks: [
+                            chunks.get(&glm::vec3(x as i64, y as i64, z as i64 - 1)).map(|c| c.get_blocks()),
+                            chunks.get(&glm::vec3(x as i64, y as i64, z as i64 + 1)).map(|c| c.get_blocks()),
+                            chunks.get(&glm::vec3(x as i64, y as i64 - 1, z as i64)).map(|c| c.get_blocks()),
+                            chunks.get(&glm::vec3(x as i64, y as i64 + 1, z as i64)).map(|c| c.get_blocks()),
+                            chunks.get(&glm::vec3(x as i64 - 1, y as i64, z as i64)).map(|c| c.get_blocks()),
+                            chunks.get(&glm::vec3(x as i64 + 1, y as i64, z as i64)).map(|c| c.get_blocks())
+                        ],
                         vust_device: vust.get_device(),
                         memory_allocator: vust.get_memory_allocator()
                     });

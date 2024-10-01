@@ -56,9 +56,6 @@ impl Chunk {
         Arc::clone(&self.vertex_count)
     }
 
-    pub fn gen_mesh(&mut self, vust: &mut Vust) {
-    }
-
     pub fn draw(&self, vust: &mut Vust, pipeline: &GraphicsPipeline, camera_buffer_info: WriteDescriptorInfo, atlas_image_info: WriteDescriptorInfo) {
         if let Ok(mutex_guard) = self.vertex_buffer.try_lock() {
             if let Some(buffer) = mutex_guard.as_ref() {

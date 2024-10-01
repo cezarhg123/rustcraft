@@ -13,6 +13,13 @@ pub enum Task {
         blocks: Arc<RwLock<BlockArray>>,
         vertex_buffer: Arc<Mutex<Option<Buffer>>>,
         vertex_count: Arc<AtomicUsize>,
+        /// * 0 = -z
+        /// * 1 = +z
+        /// * 2 = -y
+        /// * 3 = +y
+        /// * 4 = -x
+        /// * 5 = +x
+        neighbour_blocks: [Option<Arc<RwLock<BlockArray>>>; 6],
         vust_device: vust::Device,
         memory_allocator: Arc<Mutex<vust::Allocator>>
     },
@@ -46,6 +53,7 @@ impl Task {
                 blocks,
                 vertex_buffer,
                 vertex_count,
+                neighbour_blocks,
                 vust_device,
                 memory_allocator
             } => {
@@ -63,9 +71,41 @@ impl Task {
                             let block = blocks[x][y][z];
                         
                             if z == 0 { // south
-                                // check neighbour chunk
+                                match &neighbour_blocks[0] {
+                                    Some(neighbour_blocks) => {
+                                        let neighbour_blocks = neighbour_blocks.read().unwrap();
+                                        if neighbour_blocks[x][y][Chunk::SIZE - 1] == 0 {
+                                            vertices.push([
+                                                Vertex::new(block_pos, block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 0.0), block.get_tr_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 0.0), block.get_tl_uv()),
+
+                                                Vertex::new(block_pos, block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 0.0), block.get_br_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 0.0), block.get_tr_uv())
+                                            ]);
+                                        }
+                                    },
+                                    None => {} // neighbour chunk doesn't exist so dont create face
+                                }
                             } else if z == Chunk::SIZE - 1 { // north
-                                // check neighbour chunk
+                                match &neighbour_blocks[1] {
+                                    Some(neighbour_blocks) => {
+                                        let neighbour_blocks = neighbour_blocks.read().unwrap();
+                                        if neighbour_blocks[x][y][0] == 0 {
+                                            vertices.push([
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 1.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 1.0), block.get_tr_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 1.0), block.get_tl_uv()),
+        
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 1.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 0.0, 1.0), block.get_tl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 1.0), block.get_tr_uv())
+                                            ]);
+                                        }
+                                    },
+                                    None => {} // neighbour chunk doesn't exist so dont create face
+                                }
                             } else {
                                 if blocks[x][y][z - 1] == 0 {
                                     vertices.push([
@@ -93,9 +133,41 @@ impl Task {
                             }
                         
                             if y == 0 { // bottom
-                                // check neighbour chunk
+                                match &neighbour_blocks[2] {
+                                    Some(neighbour_blocks) => {
+                                        let neighbour_blocks = neighbour_blocks.read().unwrap();
+                                        if neighbour_blocks[x][Chunk::SIZE - 1][z] == 0 {
+                                            vertices.push([
+                                                Vertex::new(block_pos + glm::vec3(0.0, 0.0, 1.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 0.0), block.get_tr_uv()),
+                                                Vertex::new(block_pos, block.get_tl_uv()),
+        
+                                                Vertex::new(block_pos + glm::vec3(0.0, 0.0, 1.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 1.0), block.get_br_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 0.0), block.get_tr_uv())
+                                            ]);
+                                        }
+                                    },
+                                    None => {} // neighbour chunk doesn't exist so dont create face
+                                }
                             } else if y == Chunk::SIZE - 1 { // top
-                                // check neighbour chunk
+                                match &neighbour_blocks[3] {
+                                    Some(neighbour_blocks) => {
+                                        let neighbour_blocks = neighbour_blocks.read().unwrap();
+                                        if neighbour_blocks[x][0][z] == 0 {
+                                            vertices.push([
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 0.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 1.0), block.get_tr_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 1.0), block.get_tl_uv()),
+        
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 0.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 0.0), block.get_br_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 1.0), block.get_tr_uv())
+                                            ]);
+                                        }
+                                    },
+                                    None => {} // neighbour chunk doesn't exist so dont create face
+                                }
                             } else {
                                 if blocks[x][y - 1][z] == 0 {
                                     vertices.push([
@@ -123,9 +195,41 @@ impl Task {
                             }
                         
                             if x == 0 { // left
-                                // check neighbour chunk
+                                match &neighbour_blocks[4] {
+                                    Some(neighbour_blocks) => {
+                                        let neighbour_blocks = neighbour_blocks.read().unwrap();
+                                        if neighbour_blocks[Chunk::SIZE - 1][y][z] == 0 {
+                                            vertices.push([
+                                                Vertex::new(block_pos + glm::vec3(0.0, 0.0, 1.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 0.0), block.get_tr_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 1.0), block.get_tl_uv()),
+        
+                                                Vertex::new(block_pos + glm::vec3(0.0, 0.0, 1.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos, block.get_br_uv()),
+                                                Vertex::new(block_pos + glm::vec3(0.0, 1.0, 0.0), block.get_tr_uv())
+                                            ]);
+                                        }
+                                    },
+                                    None => {} // neighbour chunk doesn't exist so dont create face
+                                }
                             } else if x == Chunk::SIZE - 1 { // right
-                                // check neighbour chunk
+                                match &neighbour_blocks[5] {
+                                    Some(neighbour_blocks) => {
+                                        let neighbour_blocks = neighbour_blocks.read().unwrap();
+                                        if neighbour_blocks[0][y][z] == 0 {
+                                            vertices.push([
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 0.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 1.0), block.get_tr_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 0.0), block.get_tl_uv()),
+        
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 0.0), block.get_bl_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 0.0, 1.0), block.get_br_uv()),
+                                                Vertex::new(block_pos + glm::vec3(1.0, 1.0, 1.0), block.get_tr_uv())
+                                            ]);
+                                        }
+                                    },
+                                    None => {} // neighbour chunk doesn't exist so dont create face
+                                }
                             } else {
                                 if blocks[x - 1][y][z] == 0 {
                                     vertices.push([

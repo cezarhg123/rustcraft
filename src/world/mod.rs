@@ -2,19 +2,20 @@ pub mod chunk;
 pub mod block;
 pub mod blocks;
 
-use std::{collections::HashMap, io::Cursor};
+use std::{collections::HashMap, io::Cursor, sync::mpsc, thread};
 use blocks::Blocks;
 use chunk::Chunk;
 use image::GenericImageView;
 use vust::{pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline, GraphicsPipelineCreateInfo}, texture::Texture, write_descriptor_info::WriteDescriptorInfo};
-use crate::{vertex::Vertex, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::{thread_pool::ThreadPool, vertex::Vertex, WINDOW_HEIGHT, WINDOW_WIDTH};
 
 pub struct World {
     // not the best performance cuz each element could be in random memory locations but good enough
     chunks: HashMap<glm::I64Vec3, Chunk>,
     chunk_pipeline: GraphicsPipeline,
     draw_distance: i8,
-    atlas: Texture
+    atlas: Texture,
+    thread_pool: ThreadPool
 }
 
 impl World {
@@ -65,6 +66,8 @@ impl World {
             .build(vust)
             .unwrap();
 
+        let mut thread_pool = ThreadPool::new(8);
+
         let mut chunks = HashMap::new();
 
         for x in -draw_distance..draw_distance {
@@ -78,23 +81,25 @@ impl World {
         for x in -draw_distance..draw_distance {
             for y in -draw_distance..draw_distance {
                 for z in -draw_distance..draw_distance {
-                    chunks.get_mut(&glm::vec3(x as i64, y as i64, z as i64)).unwrap()
-                        .gen_terrain(|pos| {
-                            if pos.y == -6.0 {
+                    thread_pool.send_task(crate::thread_pool::task::Task::GenTerrain {
+                        chunk_pos: glm::vec3(x as i32, y as i32, z as i32),
+                        blocks: chunks.get_mut(&glm::vec3(x as i64, y as i64, z as i64)).unwrap().get_blocks(),
+                        gen_func: |pos| {
+                            if pos.y == -6 {
                                 return Blocks::GRASS_BLOCK.block_id();
                             }
                             
-                            if pos.x == 2.0 && pos.y == 2.0 && pos.z == 2.0 {
+                            if pos.x == 2 && pos.y == 2 && pos.z == 2 {
                                 return Blocks::GRASS_BLOCK.block_id();
                             }
                             
-                            if pos.x == -2.0 && pos.y == -2.0 && pos.z == -2.0 {
+                            if pos.x == -2 && pos.y == -2 && pos.z == -2 {
                                 return Blocks::DIRT.block_id();
                             }
 
                             Blocks::AIR.block_id()
                         }
-                    );
+                    });
                 }
             }
         }
@@ -102,7 +107,15 @@ impl World {
         for x in -draw_distance..draw_distance {
             for y in -draw_distance..draw_distance {
                 for z in -draw_distance..draw_distance {
-                    chunks.get_mut(&glm::vec3(x as i64, y as i64, z as i64)).unwrap().gen_mesh(vust);
+                    let chunk = chunks.get(&glm::vec3(x as i64, y as i64, z as i64)).unwrap();
+                    thread_pool.send_task(crate::thread_pool::task::Task::GenMesh {
+                        chunk_pos: glm::vec3(x as i32, y as i32, z as i32),
+                        blocks: chunk.get_blocks(),
+                        vertex_buffer: chunk.get_vertex_buffer(),
+                        vertex_count: chunk.get_vertex_count(),
+                        vust_device: vust.get_device(),
+                        memory_allocator: vust.get_memory_allocator()
+                    });
                 }
             }
         }
@@ -111,7 +124,8 @@ impl World {
             chunks,
             chunk_pipeline,
             draw_distance,
-            atlas: atlas_texture
+            atlas: atlas_texture,
+            thread_pool
         }
     }
 

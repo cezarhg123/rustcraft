@@ -1,9 +1,9 @@
 pub mod vertex;
 pub mod camera;
 pub mod world;
+pub mod thread_pool;
 
 use std::{io::Cursor, time::Instant};
-
 use camera::Camera;
 use glfw::fail_on_errors;
 use image::GenericImageView;
@@ -43,7 +43,7 @@ fn main() {
 
     let mut camera = Camera::new(glm::vec3(0.0, 0.0, -2.0), &mut vust);
 
-    let mut world = World::new(8, &mut vust);
+    let mut world = World::new(20, &mut vust);
 
     let mut frames = 0;
     let mut frame_time_instant = Instant::now();

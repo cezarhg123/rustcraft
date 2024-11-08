@@ -1,3 +1,4 @@
+use std::sync::{Arc, RwLock};
 use glfw::Window;
 use vust::{buffer::Buffer, write_descriptor_info::WriteDescriptorInfo, Vust};
 use crate::{WINDOW_HEIGHT, WINDOW_WIDTH};
@@ -18,7 +19,7 @@ impl Camera {
     pub const SPEED: f32 = 5.0;
     pub const SENSITIVITY: f32 = 30.0;
 
-    pub fn new(position: glm::Vec3, vust: &mut Vust) -> Camera {
+    pub fn new(position: glm::Vec3, vust: Arc<RwLock<Vust>>) -> Camera {
         let projection = glm::perspective_fov_rh_zo(45.0f32.to_radians(), WINDOW_WIDTH as f32, WINDOW_HEIGHT as f32, 0.1, 1000.0);
         let view = glm::look_at_rh(&position, &(position + glm::vec3(0.0, 0.0, 1.0)), &Self::UP);
 
@@ -28,7 +29,7 @@ impl Camera {
             .with_data(&[projection, view])
             .with_usage(vust::buffer::BufferUsageFlags::UNIFORM_BUFFER)
             .with_memory_location(vust::buffer::MemoryPropertyFlags::HOST_VISIBLE | vust::buffer::MemoryPropertyFlags::HOST_COHERENT)
-            .build(vust, true);
+            .build(&*vust.read().unwrap(), true);
 
         Camera {
             position,
@@ -48,6 +49,10 @@ impl Camera {
 
     pub fn buffer_info(&self) -> WriteDescriptorInfo {
         self.buffer_info
+    }
+
+    pub fn position(&self) -> glm::Vec3 {
+        self.position
     }
 
     pub fn inputs(&mut self, window: &mut Window, delta_time: f32) {
@@ -116,9 +121,5 @@ impl Camera {
         let camera_uniform = [self.projection.as_slice(), self.view.as_slice()].concat();
 
         self.uniform_buffer.overwrite(&camera_uniform).unwrap();
-    }
-    
-    pub fn cleanup(&mut self, vust: &mut Vust) {
-        self.uniform_buffer.destroy(vust);
     }
 }

@@ -18,7 +18,7 @@ pub struct Chunk {
 impl Chunk {
     pub const SIZE: usize = 16;
 
-    pub fn new(chunk_pos: glm::IVec3, pipeline: &GraphicsPipeline, vust: &mut Vust) -> Chunk {
+    pub fn new(chunk_pos: glm::IVec3, pipeline: &GraphicsPipeline, vust: &Vust) -> Chunk {
         let uniform_buffer = {
             let name = format!("chunk {} {} {} uniform buffer", chunk_pos.x, chunk_pos.y, chunk_pos.z);
 
@@ -56,7 +56,7 @@ impl Chunk {
         Arc::clone(&self.vertex_count)
     }
 
-    pub fn draw(&self, vust: &mut Vust, pipeline: &GraphicsPipeline, camera_buffer_info: WriteDescriptorInfo, atlas_image_info: WriteDescriptorInfo) {
+    pub fn draw(&self, vust: &Vust, pipeline: &GraphicsPipeline, camera_buffer_info: WriteDescriptorInfo, atlas_image_info: WriteDescriptorInfo) {
         if let Ok(mutex_guard) = self.vertex_buffer.try_lock() {
             if let Some(buffer) = mutex_guard.as_ref() {
                 vust.update_descriptor_set(&self.descriptor, &[
@@ -69,14 +69,5 @@ impl Chunk {
                 vust.draw(self.vertex_count.load(Ordering::Relaxed) as u32);
             }
         }
-    }
-
-    pub fn cleanup(&mut self, vust: &mut Vust) {
-        if let Ok(mut mutex_guard) = self.vertex_buffer.try_lock() {
-            if let Some(mut buffer) = mutex_guard.take() {
-                buffer.destroy(vust);
-            }
-        }
-        self.uniform_buffer.destroy(vust);
     }
 }

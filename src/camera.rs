@@ -16,10 +16,10 @@ pub struct Camera {
 
 impl Camera {
     pub const UP: glm::Vec3 = glm::Vec3::new(0.0, -1.0, 0.0);
-    pub const SPEED: f32 = 5.0;
+    pub const SPEED: f32 = 20.0;
     pub const SENSITIVITY: f32 = 30.0;
 
-    pub fn new(position: glm::Vec3, vust: Arc<RwLock<Vust>>) -> Camera {
+    pub fn new(position: glm::Vec3, vust: &Vust) -> Camera {
         let projection = glm::perspective_fov_rh_zo(45.0f32.to_radians(), WINDOW_WIDTH as f32, WINDOW_HEIGHT as f32, 0.1, 1000.0);
         let view = glm::look_at_rh(&position, &(position + glm::vec3(0.0, 0.0, 1.0)), &Self::UP);
 
@@ -29,7 +29,7 @@ impl Camera {
             .with_data(&[projection, view])
             .with_usage(vust::buffer::BufferUsageFlags::UNIFORM_BUFFER)
             .with_memory_location(vust::buffer::MemoryPropertyFlags::HOST_VISIBLE | vust::buffer::MemoryPropertyFlags::HOST_COHERENT)
-            .build(&*vust.read().unwrap(), true);
+            .build(vust, true);
 
         Camera {
             position,

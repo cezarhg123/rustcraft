@@ -1,7 +1,6 @@
 pub mod vertex;
 pub mod camera;
 pub mod world;
-pub mod thread_pool;
 
 use std::{io::Cursor, sync::{Arc, RwLock}, time::Instant};
 use camera::Camera;
@@ -27,7 +26,7 @@ fn main() {
         .create_window(WINDOW_WIDTH, WINDOW_HEIGHT, WINDOW_TITLE, glfw::WindowMode::Windowed)
         .unwrap();
 
-    let vust = Arc::new(RwLock::new(Vust::new(
+    let mut vust = Vust::new(
         VustCreateInfo::default()
             .with_app_name(WINDOW_TITLE)
             .with_app_version(vust::make_api_version(0, 0, 1, 0))
@@ -39,11 +38,11 @@ fn main() {
                 }
             )
             .with_framebuffer_size((window.get_framebuffer_size().0 as usize, window.get_framebuffer_size().1 as usize))
-    )));
+    );
 
-    let mut camera = Camera::new(glm::vec3(0.0, 0.0, -2.0), Arc::clone(&vust));
+    let mut camera = Camera::new(glm::vec3(0.0, 10.0, -10.0), &vust);
 
-    let mut world = World::new(26, Arc::clone(&vust));
+    let mut world = World::new(16, &vust);
 
     let mut frames = 0;
     let mut frame_time_instant = Instant::now();
@@ -64,11 +63,11 @@ fn main() {
 
         camera.inputs(&mut window, delta_time);
         
-        vust.write().unwrap().reset_command_buffer();
-        world.update_chunks(camera.position(), Arc::clone(&vust));
-        world.draw(&*vust.read().unwrap(), camera.position(), camera.buffer_info());
-        vust.write().unwrap().render_surface();
+        vust.reset_command_buffer();
+        world.update_chunks(camera.position(), &vust);
+        world.draw(&vust, camera.position(), camera.buffer_info());
+        vust.render_surface();
     }
 
-    vust.read().unwrap().wait_idle();
+    vust.wait_idle();
 }

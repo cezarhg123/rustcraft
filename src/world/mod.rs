@@ -2,22 +2,22 @@ pub mod chunk;
 pub mod block;
 pub mod blocks;
 
-use std::{collections::HashMap, io::Cursor, sync::{mpsc, Arc, RwLock}, thread};
+use std::{cell::RefCell, collections::HashMap, io::Cursor, sync::{mpsc, Arc, RwLock}, thread, time::Instant};
 use block::BlockID;
 use blocks::Blocks;
 use chunk::Chunk;
 use image::GenericImageView;
 use noise::{NoiseFn, OpenSimplex, Perlin, Simplex, Worley};
 use vust::{pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline, GraphicsPipelineCreateInfo}, texture::Texture, write_descriptor_info::WriteDescriptorInfo};
-use crate::{thread_pool::ThreadPool, vertex::Vertex, WINDOW_HEIGHT, WINDOW_WIDTH};
+use crate::{vertex::Vertex, WINDOW_HEIGHT, WINDOW_WIDTH};
 
 pub struct World {
     // not the best performance cuz each element could be in random memory locations but good enough
-    chunks: HashMap<glm::IVec3, Chunk>,
+    chunks: HashMap<glm::IVec3, RefCell<Chunk>>,
     chunk_pipeline: GraphicsPipeline,
     draw_distance: i8,
     atlas: Texture,
-    thread_pool: ThreadPool
+    noise: Perlin
 }
 
 impl World {
@@ -25,13 +25,13 @@ impl World {
     // 1 billion blocks each direction
     pub const MAX_BLOCKS: usize = 2_000_000_000;
 
-    pub fn new<'a>(draw_distance: i8, vust: Arc<RwLock<vust::Vust>>) -> World {
+    pub fn new<'a>(draw_distance: i8, vust: &vust::Vust) -> World {
         let chunk_pipeline = GraphicsPipeline::new(
-            &*vust.read().unwrap(),
+            &*vust,
             GraphicsPipelineCreateInfo {
                 name: "pipeline".to_string(),
-                vertex_bin: std::fs::read("shaders/chunk.vert.spv").unwrap(),
-                fragment_bin: std::fs::read("shaders/chunk.frag.spv").unwrap(),
+                vertex_bin: std::fs::read("shaders/chunk/mesh.vert.spv").unwrap(),
+                fragment_bin: std::fs::read("shaders/chunk/mesh.frag.spv").unwrap(),
                 vertex_binding_descriptions: Vertex::get_binding_info().to_vec(),
                 vertex_attribute_descriptions: Vertex::get_attribute_info().to_vec(),
                 topology: vust::pipeline::PrimitiveTopology::TRIANGLE_LIST,
@@ -69,77 +69,64 @@ impl World {
             .with_dimensions(atlas_image.dimensions())
             .with_format(vust::texture::Format::R8G8B8A8_SRGB)
             .with_filter(vust::texture::Filter::NEAREST)
-            .build(&*vust.read().unwrap())
+            .build(vust)
             .unwrap();
 
-        let mut thread_pool = ThreadPool::new(8);
+        let noise = Perlin::new(121312);
 
         let mut chunks = HashMap::new();
 
-        for x in -draw_distance..draw_distance {
-            for y in -draw_distance..draw_distance {
-                for z in -draw_distance..draw_distance {
-                    chunks.insert(glm::vec3(x as i32, y as i32, z as i32), Chunk::new(glm::vec3(x as i32, y as i32, z as i32), &chunk_pipeline, &*vust.read().unwrap()));
-                }
-            }
-        }
+        let world_gen_time = Instant::now();
 
         for x in -draw_distance..draw_distance {
             for y in -draw_distance..draw_distance {
                 for z in -draw_distance..draw_distance {
-                    thread_pool.send_task(crate::thread_pool::task::Task::GenTerrain {
-                        chunk_pos: glm::vec3(x as i32, y as i32, z as i32),
-                        blocks: chunks.get_mut(&glm::vec3(x as i32, y as i32, z as i32)).unwrap().get_blocks(),
-                        gen_func: |pos| {
-                            let perlin_noise = OpenSimplex::new(51234);
-                            let perlin_x = (pos.x.abs() as f64 % 200.0) / 200.0;
-                            let perlin_z = (pos.z.abs() as f64 % 200.0) / 200.0;
-                            let perlin_y = (perlin_noise.get([perlin_x, perlin_z]) * 100.0) as i32;
-                            
-                            if pos.y == perlin_y {
-                                Blocks::GRASS_BLOCK.block_id()
-                            } else {
-                                Blocks::AIR.block_id()
-                            }
-                        }
-                    });
+                    chunks.insert(glm::vec3(x as i32, y as i32, z as i32), RefCell::new(Chunk::new(glm::vec3(x as i32, y as i32, z as i32), &chunk_pipeline, &*vust)));
                 }
             }
         }
+        let chunk_init_time = world_gen_time.elapsed();
+        println!("chunk hashmap init time: {}ms", chunk_init_time.as_millis());
+
+        for chunk in chunks.values_mut() {
+            chunk.borrow_mut().gen_terrain(&noise);
+        }
+        let terrain_gen_time = world_gen_time.elapsed() - chunk_init_time;
+        println!("terrain generation time: {}ms", terrain_gen_time.as_millis());
 
         for x in -draw_distance..draw_distance {
             for y in -draw_distance..draw_distance {
                 for z in -draw_distance..draw_distance {
-                    let chunk = chunks.get(&glm::vec3(x as i32, y as i32, z as i32)).unwrap();
-                    thread_pool.send_task(crate::thread_pool::task::Task::GenMesh {
-                        chunk_pos: glm::vec3(x as i32, y as i32, z as i32),
-                        blocks: chunk.get_blocks(),
-                        vertex_buffer: chunk.get_vertex_buffer(),
-                        vertex_count: chunk.get_vertex_count(),
-                        neighbour_blocks: [
-                            chunks.get(&glm::vec3(x as i32, y as i32, z as i32 - 1)).map(|c| c.get_blocks()),
-                            chunks.get(&glm::vec3(x as i32, y as i32, z as i32 + 1)).map(|c| c.get_blocks()),
-                            chunks.get(&glm::vec3(x as i32, y as i32 - 1, z as i32)).map(|c| c.get_blocks()),
-                            chunks.get(&glm::vec3(x as i32, y as i32 + 1, z as i32)).map(|c| c.get_blocks()),
-                            chunks.get(&glm::vec3(x as i32 - 1, y as i32, z as i32)).map(|c| c.get_blocks()),
-                            chunks.get(&glm::vec3(x as i32 + 1, y as i32, z as i32)).map(|c| c.get_blocks())
-                        ],
-                        vust: Arc::clone(&vust)
-                    });
+                    chunks.get(&glm::vec3(x as i32, y as i32, z as i32)).unwrap().borrow_mut().gen_mesh(
+                        vust,
+                        [
+                            chunks.get(&glm::vec3(x as i32, y as i32, z as i32 - 1)).map(|chunk| chunk.borrow()),
+                            chunks.get(&glm::vec3(x as i32, y as i32, z as i32 + 1)).map(|chunk| chunk.borrow()),
+                            chunks.get(&glm::vec3(x as i32, y as i32 - 1, z as i32)).map(|chunk| chunk.borrow()),
+                            chunks.get(&glm::vec3(x as i32, y as i32 + 1, z as i32)).map(|chunk| chunk.borrow()),
+                            chunks.get(&glm::vec3(x as i32 - 1, y as i32, z as i32)).map(|chunk| chunk.borrow()),
+                            chunks.get(&glm::vec3(x as i32 + 1, y as i32, z as i32)).map(|chunk| chunk.borrow())
+                        ]
+                    );
                 }
             }
         }
+        let mesh_gen_time = world_gen_time.elapsed() - chunk_init_time - terrain_gen_time;
+        println!("mesh generation time: {}ms", mesh_gen_time.as_millis());
+
+        println!("world gen {}ms", world_gen_time.elapsed().as_millis());
+
 
         World {
             chunks,
             chunk_pipeline,
             draw_distance,
             atlas: atlas_texture,
-            thread_pool
+            noise
         }
     }
 
-    pub fn update_chunks(&mut self, player_pos: glm::Vec3, vust: Arc<RwLock<vust::Vust>>) {
+    pub fn update_chunks(&mut self, player_pos: glm::Vec3, vust: &vust::Vust) {
         // snap the player position to closest chunk
         let snapped_player_pos = snap_player_pos_to_chunk(player_pos);
 
@@ -150,7 +137,7 @@ impl World {
                 for z in -self.draw_distance..self.draw_distance {
                     let chunk_pos = glm::vec3(x as i32, y as i32, z as i32) + snapped_player_pos;
                     if self.chunks.get(&chunk_pos).is_none() {
-                        self.chunks.insert(chunk_pos, Chunk::new(chunk_pos, &self.chunk_pipeline, &*vust.read().unwrap()));
+                        self.chunks.insert(chunk_pos, RefCell::new(Chunk::new(chunk_pos, &self.chunk_pipeline, vust)));
                         new_chunks.push(chunk_pos);
                     }
                 }
@@ -172,43 +159,6 @@ impl World {
                 self.chunks.remove(&chunk_pos);
             }
         }
-
-        for chunk_pos in &new_chunks {
-            self.thread_pool.send_task(crate::thread_pool::task::Task::GenTerrain {
-                chunk_pos: *chunk_pos,
-                blocks: self.chunks.get(chunk_pos).unwrap().get_blocks(),
-                gen_func: |pos| {
-                    let perlin_noise = OpenSimplex::new(51234);
-                    let perlin_x = (pos.x.abs() as f64 % 200.0) / 200.0;
-                    let perlin_z = (pos.z.abs() as f64 % 200.0) / 200.0;
-                    let perlin_y = (perlin_noise.get([perlin_x, perlin_z]) * 100.0) as i32;
-                    
-                    if pos.y == perlin_y {
-                        Blocks::GRASS_BLOCK.block_id()
-                    } else {
-                        Blocks::AIR.block_id()
-                    }
-                }
-            });
-        }
-
-        for chunk_pos in new_chunks {
-            self.thread_pool.send_task(crate::thread_pool::task::Task::GenMesh {
-                chunk_pos: chunk_pos,
-                blocks: self.chunks.get(&chunk_pos).unwrap().get_blocks(),
-                vertex_buffer: self.chunks.get(&chunk_pos).unwrap().get_vertex_buffer(),
-                vertex_count: self.chunks.get(&chunk_pos).unwrap().get_vertex_count(),
-                neighbour_blocks: [
-                    self.chunks.get(&glm::vec3(chunk_pos.x, chunk_pos.y, chunk_pos.z - 1)).map(|c| c.get_blocks()),
-                    self.chunks.get(&glm::vec3(chunk_pos.x, chunk_pos.y, chunk_pos.z + 1)).map(|c| c.get_blocks()),
-                    self.chunks.get(&glm::vec3(chunk_pos.x, chunk_pos.y - 1, chunk_pos.z)).map(|c| c.get_blocks()),
-                    self.chunks.get(&glm::vec3(chunk_pos.x, chunk_pos.y + 1, chunk_pos.z)).map(|c| c.get_blocks()),
-                    self.chunks.get(&glm::vec3(chunk_pos.x - 1, chunk_pos.y, chunk_pos.z)).map(|c| c.get_blocks()),
-                    self.chunks.get(&glm::vec3(chunk_pos.x + 1, chunk_pos.y, chunk_pos.z)).map(|c| c.get_blocks())
-                ],
-                vust: Arc::clone(&vust)
-            });
-        }
     }
 
     pub fn draw(&self, vust: &vust::Vust, player_pos: glm::Vec3, camera_buffer_info: WriteDescriptorInfo) {
@@ -219,7 +169,7 @@ impl World {
             for y in -self.draw_distance..self.draw_distance {
                 for z in -self.draw_distance..self.draw_distance {
                     let chunk = self.chunks.get(&(glm::vec3(x as i32, y as i32, z as i32) + snapped_player_pos)).unwrap();
-                    chunk.draw(
+                    chunk.borrow().draw(
                         vust,
                         &self.chunk_pipeline,
                         camera_buffer_info,

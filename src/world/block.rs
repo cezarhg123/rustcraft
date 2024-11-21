@@ -3,8 +3,6 @@ pub struct BlockID(u8);
 
 const SIXTEENTH: f32 = 1.0 / 16.0;
 impl BlockID {
-    // all get_uv functions panic if blockid is 0 cuz 0 is air
-
     /// Bottom Left
     pub fn get_bl_uv(&self) -> glm::Vec2 {
         glm::vec2(

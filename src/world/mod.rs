@@ -21,10 +21,6 @@ pub struct World {
 }
 
 impl World {
-    // i doubt someone will travel 2 billion blocks
-    // 1 billion blocks each direction
-    pub const MAX_BLOCKS: usize = 2_000_000_000;
-
     pub fn new<'a>(draw_distance: i8, vust: &vust::Vust) -> World {
         let chunk_pipeline = GraphicsPipeline::new(
             &*vust,
@@ -132,6 +128,8 @@ impl World {
 
         let mut new_chunks = Vec::new();
 
+        // check if there should be a chunk within the draw distance
+        // if not, create it
         for x in -self.draw_distance..self.draw_distance {
             for y in -self.draw_distance..self.draw_distance {
                 for z in -self.draw_distance..self.draw_distance {
@@ -144,10 +142,24 @@ impl World {
             }
         }
 
+        for chunk_pos in &new_chunks {
+            self.chunks.get(&chunk_pos).unwrap().borrow_mut().gen_terrain(&self.noise);
+        }
+
+        for chunk_pos in new_chunks {
+            self.chunks.get(&chunk_pos).unwrap().borrow_mut().gen_mesh(vust, [
+                self.chunks.get(&(chunk_pos + glm::vec3(0, 0, -1))).map(|chunk| chunk.borrow()),
+                self.chunks.get(&(chunk_pos + glm::vec3(0, 0, 1))).map(|chunk| chunk.borrow()),
+                self.chunks.get(&(chunk_pos + glm::vec3(0, -1, 0))).map(|chunk| chunk.borrow()),
+                self.chunks.get(&(chunk_pos + glm::vec3(0, 1, 0))).map(|chunk| chunk.borrow()),
+                self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, 0))).map(|chunk| chunk.borrow()),
+                self.chunks.get(&(chunk_pos + glm::vec3(1, 0, 0))).map(|chunk| chunk.borrow())
+            ]);
+        }
+
         let all_chunks_positions = self.chunks.keys().cloned().collect::<Vec<glm::IVec3>>();
         for chunk_pos in all_chunks_positions {
-            
-            // "buffer" the edge chunks that are outside of the draw distance so that by the time the mesh memory is destroyed, it wont be while actively used in a draw call
+            // "buffer" the edge chunks that are outside of the draw distance so that by the time the mesh memory is destroyed, it wont be destroyed while actively used in a draw call
             // lazy fix but it works
             let unrendered_chunk_offset = 1;
 

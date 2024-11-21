@@ -17,7 +17,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub const SIZE: usize = 16;
+    pub const SIZE: usize = 32;
 
     pub fn new(chunk_pos: glm::IVec3, pipeline: &GraphicsPipeline, vust: &Vust) -> Chunk {
         let uniform_buffer = {

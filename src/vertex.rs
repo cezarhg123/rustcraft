@@ -1,23 +1,18 @@
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct Vertex {
-    pos_x: f32, 
-    pos_y: f32,
-    pos_z: f32,
-
-    uv_x: f32,
-    uv_y: f32
-}
+pub struct Vertex(u32);
 
 impl Vertex {
     pub fn new(pos: glm::Vec3, uv: glm::Vec2) -> Vertex {
-        Vertex {
-            pos_x: pos.x,
-            pos_y: pos.y,
-            pos_z: pos.z,
-            uv_x: uv.x,
-            uv_y: uv.y
-        }
+        let mut compressed_vertex = 0;
+
+        compressed_vertex |= (pos.x as u32) << 24;
+        compressed_vertex |= (pos.y as u32) << 16;
+        compressed_vertex |= (pos.z as u32) << 8;
+        compressed_vertex |= ((uv.x * 16.0) as u32) << 4;
+        compressed_vertex |= (uv.y * 16.0) as u32;
+        
+        Vertex(compressed_vertex)
     }
 
     pub fn get_binding_info() -> [vust::VertexInputBindingDescription; 1] {
@@ -30,20 +25,14 @@ impl Vertex {
         ]
     }
 
-    pub fn get_attribute_info() -> [vust::VertexInputAttributeDescription; 2] {
+    pub fn get_attribute_info() -> [vust::VertexInputAttributeDescription; 1] {
         [
             vust::VertexInputAttributeDescription::builder()
                 .location(0)
                 .binding(0)
-                .format(vust::Format::R32G32B32_SFLOAT)
+                .format(vust::Format::R32_UINT)
                 .offset(0)
                 .build(),
-            vust::VertexInputAttributeDescription::builder()
-                .location(1)
-                .binding(0)
-                .format(vust::Format::R32G32_SFLOAT)
-                .offset(size_of::<f32>() as u32 * 3)
-                .build()
         ]
     }
 }

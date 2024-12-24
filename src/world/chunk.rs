@@ -290,12 +290,12 @@ impl Chunk {
 
     pub fn draw(&self, vust: &Vust, pipeline: &GraphicsPipeline, camera_buffer_info: WriteDescriptorInfo, atlas_image_info: WriteDescriptorInfo) {
         if let Some(buffer) = self.vertex_buffer.as_ref() {
-            vust.update_descriptor_set(&self.descriptor, &[
+            vust.update_descriptor_set(&self.descriptor, vec![
                 camera_buffer_info,
                 WriteDescriptorInfo::Buffer { buffer: self.uniform_buffer.handle(), offset: 0, range: size_of::<glm::Mat4>() as u64 },
                 atlas_image_info
             ]);
-            vust.bind_descriptor_set(pipeline, &self.descriptor);
+            vust.bind_descriptor_set(pipeline.pipeline_layout(), &self.descriptor);
             vust.bind_vertex_buffer(buffer.handle());
             vust.draw(self.vertex_count as u32);
         }

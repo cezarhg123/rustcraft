@@ -9,7 +9,7 @@ use image::GenericImageView;
 use vertex::Vertex;
 use vust::{buffer::Buffer, create_info::VustCreateInfo, pipeline::{DescriptorSetBinding, DescriptorSetLayout, GraphicsPipeline, GraphicsPipelineCreateInfo}, texture::Texture, write_descriptor_info::WriteDescriptorInfo, Vust};
 use winapi::um::libloaderapi::GetModuleHandleW;
-use world::World;
+use world::{chunk, World};
 
 pub const WINDOW_WIDTH: u32 = 1920;
 pub const WINDOW_HEIGHT: u32 = 1080;
@@ -64,7 +64,12 @@ fn main() {
         camera.inputs(&mut window, delta_time);
         
         vust.reset_command_buffer();
+        let chunk_update_time = Instant::now();
         world.update_chunks(camera.position(), &vust);
+        let chunk_update_time = chunk_update_time.elapsed().as_millis();
+        if chunk_update_time > 10 {
+            println!("Chunk update time: {}ms", chunk_update_time);
+        }
         world.draw(&vust, camera.position(), camera.buffer_info());
         vust.render_surface();
     }

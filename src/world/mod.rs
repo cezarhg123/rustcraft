@@ -146,7 +146,7 @@ impl World {
             self.chunks.get(&chunk_pos).unwrap().borrow_mut().gen_terrain(&self.noise);
         }
 
-        for chunk_pos in new_chunks {
+        for chunk_pos in new_chunks {            
             self.chunks.get(&chunk_pos).unwrap().borrow_mut().gen_mesh(vust, [
                 self.chunks.get(&(chunk_pos + glm::vec3(0, 0, -1))).map(|chunk| chunk.borrow()),
                 self.chunks.get(&(chunk_pos + glm::vec3(0, 0, 1))).map(|chunk| chunk.borrow()),
@@ -155,17 +155,74 @@ impl World {
                 self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, 0))).map(|chunk| chunk.borrow()),
                 self.chunks.get(&(chunk_pos + glm::vec3(1, 0, 0))).map(|chunk| chunk.borrow())
             ]);
+            
+            // update the mesh of the chunks that were previously at the edge
+            if chunk_pos.z == snapped_player_pos.z + self.draw_distance as i32 { // if chunk is at +z
+                self.chunks.get(&(chunk_pos + glm::vec3(0, 0, -1))).unwrap().borrow_mut().gen_mesh(vust, [
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 0, -2))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&chunk_pos).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, -1, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 1, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, 0, -1))).map(|chunk| chunk.borrow())
+                ]);
+            } else if chunk_pos.z == snapped_player_pos.z - self.draw_distance as i32 { // if chunk is at -z
+                self.chunks.get(&(chunk_pos + glm::vec3(0, 0, 1))).unwrap().borrow_mut().gen_mesh(vust, [
+                    self.chunks.get(&chunk_pos).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 0, 2))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, -1, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 1, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, 0, 1))).map(|chunk| chunk.borrow())
+                ]);
+            }
+
+            if chunk_pos.y == snapped_player_pos.y + self.draw_distance as i32 { // if chunk is at +y
+                self.chunks.get(&(chunk_pos + glm::vec3(0, -1, 0))).unwrap().borrow_mut().gen_mesh(vust, [
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, -1, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, -1, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, -2, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&chunk_pos).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, -1, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, -1, 0))).map(|chunk| chunk.borrow())
+                ]);
+            } else if chunk_pos.y == snapped_player_pos.y - self.draw_distance as i32 { // if chunk is at -y
+                self.chunks.get(&(chunk_pos + glm::vec3(0, 1, 0))).unwrap().borrow_mut().gen_mesh(vust, [
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 1, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 1, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&chunk_pos).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(0, 2, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, 1, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, 1, 0))).map(|chunk| chunk.borrow())
+                ]);
+            }
+
+            if chunk_pos.x == snapped_player_pos.x + self.draw_distance as i32 { // if chunk is at +x
+                self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, 0))).unwrap().borrow_mut().gen_mesh(vust, [
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, 0, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, -1, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-1, 1, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(-2, 0, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&chunk_pos).map(|chunk| chunk.borrow())
+                ]);
+            } else if chunk_pos.x == snapped_player_pos.x - self.draw_distance as i32 { // if chunk is at -x
+                self.chunks.get(&(chunk_pos + glm::vec3(1, 0, 0))).unwrap().borrow_mut().gen_mesh(vust, [
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, 0, -1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, 0, 1))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, -1, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(1, 1, 0))).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&chunk_pos).map(|chunk| chunk.borrow()),
+                    self.chunks.get(&(chunk_pos + glm::vec3(2, 0, 0))).map(|chunk| chunk.borrow())
+                ]);
+            }
         }
 
         let all_chunks_positions = self.chunks.keys().cloned().collect::<Vec<glm::IVec3>>();
         for chunk_pos in all_chunks_positions {
-            // "buffer" the edge chunks that are outside of the draw distance so that by the time the mesh memory is destroyed, it wont be destroyed while actively used in a draw call
-            // lazy fix but it works
-            let unrendered_chunk_offset = 1;
-
-            let within_draw_distance_x = chunk_pos.x >= snapped_player_pos.x - (self.draw_distance as i32 + unrendered_chunk_offset) && chunk_pos.x <= snapped_player_pos.x + (self.draw_distance as i32 + unrendered_chunk_offset);
-            let within_draw_distance_y = chunk_pos.y >= snapped_player_pos.y - (self.draw_distance as i32 + unrendered_chunk_offset) && chunk_pos.y <= snapped_player_pos.y + (self.draw_distance as i32 + unrendered_chunk_offset);
-            let within_draw_distance_z = chunk_pos.z >= snapped_player_pos.z - (self.draw_distance as i32 + unrendered_chunk_offset) && chunk_pos.z <= snapped_player_pos.z + (self.draw_distance as i32 + unrendered_chunk_offset);
+            let within_draw_distance_x = chunk_pos.x >= snapped_player_pos.x - self.draw_distance as i32 && chunk_pos.x <= snapped_player_pos.x + self.draw_distance as i32;
+            let within_draw_distance_y = chunk_pos.y >= snapped_player_pos.y - self.draw_distance as i32 && chunk_pos.y <= snapped_player_pos.y + self.draw_distance as i32;
+            let within_draw_distance_z = chunk_pos.z >= snapped_player_pos.z - self.draw_distance as i32 && chunk_pos.z <= snapped_player_pos.z + self.draw_distance as i32;
 
             if !(within_draw_distance_x && within_draw_distance_y && within_draw_distance_z) {
                 self.chunks.remove(&chunk_pos);

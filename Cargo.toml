@@ -10,5 +10,5 @@ glfw = { version = "0.58.0", features = ["vulkan", "ash"] }
 glm = { version = "0.19.0", package = "nalgebra-glm" }
 image = "0.25.2"
 noise = "0.9.0"
-vust = { git = "https://github.com/cezarhg123/vust", version = "0.3.1" }
+vust = { git = "https://github.com/cezarhg123/vust", version = "0.4.2" }
 winapi = "0.3.9"
